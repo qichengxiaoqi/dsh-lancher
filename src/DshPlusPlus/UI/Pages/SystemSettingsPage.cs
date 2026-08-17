@@ -23,8 +23,13 @@ public sealed class SystemSettingsPage : PageBase
         Build();
     }
 
+    public override bool SupportsAutoRefresh => true;
+
+    public void UpdatePaths(LauncherPaths paths) => _scanner.UpdatePaths(paths);
+
     public override async Task RefreshAsync(CancellationToken cancellationToken)
     {
+        _scanner.ClearCache();
         var infos = await _scanner.ScanAsync(cancellationToken);
         _files.BeginUpdate();
         _files.Items.Clear();

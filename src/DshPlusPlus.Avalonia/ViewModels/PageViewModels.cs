@@ -217,6 +217,7 @@ public sealed class DshManagementPageViewModel : PageViewModel
 
     public string ServiceStatus { get => _serviceStatus; private set => SetProperty(ref _serviceStatus, value); }
     public string GitStatus { get => _gitStatus; private set => SetProperty(ref _gitStatus, value); }
+    public string UpdatePolicy => Host.UpdateCoordinator.BackupPolicyDescription;
     public string WebUrl => Host.Paths.WebUrl;
     public string RootPath => string.IsNullOrWhiteSpace(Host.Paths.Root) ? "DSH root not detected" : Host.Paths.Root;
     public string PlatformNotice => OperatingSystem.IsWindows()
@@ -288,7 +289,7 @@ public sealed class DshManagementPageViewModel : PageViewModel
             var result = await Host.GitRepository.CheckAsync(CancellationToken.None);
             GitStatus = result.Message;
             Status = "Git status refreshed";
-            AppendLog($"[{DateTime.Now:T}] git: {result.Message}");
+            AppendLog($"[{DateTime.Now:T}] DSH git: {result.Message}");
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -313,7 +314,7 @@ public sealed class DshManagementPageViewModel : PageViewModel
         {
             var result = await Host.UpdateCoordinator.PullAsync(CancellationToken.None);
             Status = result.Message;
-            AppendLog($"[{DateTime.Now:T}] update: {result.Message}");
+            AppendLog($"[{DateTime.Now:T}] DSH update: {result.Message}");
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

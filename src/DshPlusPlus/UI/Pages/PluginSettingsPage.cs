@@ -8,7 +8,7 @@ namespace DshPlusPlus.UI.Pages;
 
 public sealed class PluginSettingsPage : PageBase
 {
-    private readonly LauncherPaths _paths;
+    private LauncherPaths _paths;
     private readonly PluginInventoryService _inventory;
     private readonly ProfilePatchService _patchService;
     private readonly IDshServiceController _serviceController;
@@ -35,6 +35,14 @@ public sealed class PluginSettingsPage : PageBase
         _status = MutedLabel("尚未扫描");
         _toggleButton = new GlowButton("启用/禁用", theme.Palette, primary: true) { Width = 110, Enabled = false };
         Build();
+    }
+
+    public override bool SupportsAutoRefresh => true;
+
+    public void UpdatePaths(LauncherPaths paths)
+    {
+        _paths = paths;
+        _inventory.UpdatePaths(paths);
     }
 
     public override async Task RefreshAsync(CancellationToken cancellationToken)

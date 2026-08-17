@@ -46,9 +46,9 @@ public sealed class DshManagementPage : PageBase
         _serviceCard = new MetricCard("运行状态", "检测中", _paths.WebUrl, theme.Palette);
         _versionCard = new MetricCard("本地版本", "读取中", "package.json", theme.Palette);
         _commitCard = new MetricCard("当前提交", "读取中", _paths.Root, theme.Palette);
-        _remoteCard = new MetricCard("远程状态", "未检查", "git origin", theme.Palette);
+        _remoteCard = new MetricCard("DSH 源码仓库状态", "未检查", "仅检测 DSH 源码，不检测 dsh++", theme.Palette);
         _log = new LogDrawer(theme.Palette);
-        _pullButton = new GlowButton("拉取更新", theme.Palette, primary: true) { Enabled = false };
+        _pullButton = new GlowButton("拉取 DSH 更新", theme.Palette, primary: true) { Enabled = false };
         Build();
     }
 
@@ -57,6 +57,8 @@ public sealed class DshManagementPage : PageBase
         await RefreshStatusAsync(cancellationToken);
         await RefreshRepositoryAsync(cancellationToken);
     }
+
+    public event Action<ServiceState>? ServiceStateChanged;
 
     protected override void Dispose(bool disposing)
     {
@@ -109,7 +111,7 @@ public sealed class DshManagementPage : PageBase
         var start = ActionButton("启动服务", StartServiceAsync, primary: true);
         var stop = ActionButton("停止服务", StopServiceAsync);
         var restart = ActionButton("重启服务", RestartServiceAsync);
-        var check = ActionButton("检查更新", CheckUpdateAsync);
+        var check = ActionButton("检查 DSH 更新", CheckUpdateAsync);
         _pullButton.Click += PullUpdateAsync;
         var web = ActionButton("打开 Web UI", (_, _) => OpenWebUi());
         actions.Controls.AddRange([start, stop, restart, check, _pullButton, web]);
@@ -181,14 +183,15 @@ public sealed class DshManagementPage : PageBase
         }
     });
 
-    private async void CheckUpdateAsync(object? sender, EventArgs e) => await RunOperationAsync("检查更新", async cancellationToken =>
+    private async void CheckUpdateAsync(object? sender, EventArgs e) => await RunOperationAsync("检查 DSH 更新", async cancellationToken =>
     {
         _lastUpdateCheck = await _gitRepository.CheckAsync(cancellationToken);
         if (_lastUpdateCheck.Snapshot is not null)
             ApplySnapshot(_lastUpdateCheck.Snapshot);
         _pullButton.Enabled = _lastUpdateCheck.CanPull;
         _remoteCard.SetValue(_lastUpdateCheck.State.ToString(), _lastUpdateCheck.Message);
-        _log.Append($"检查更新：{_lastUpdateCheck.Message}");
+        _log.Append($"检查 DSH 更新：{_lastUpdateCheck.Message}");
+        _log.Append($"DSH 更新策略：{_updateCoordinator.BackupPolicyDescription}");
     });
 
     private async void PullUpdateAsync(object? sender, EventArgs e)
@@ -198,7 +201,10 @@ public sealed class DshManagementPage : PageBase
             _log.Append("拉取更新已阻止：请先检查到可用更新");
             return;
         }
-        if (MessageBox.Show(this, "将停止 DSH，执行 fast-forward 更新、安装依赖和构建。继续吗？", "确认拉取更新",
+        var confirmation = _lastUpdateCheck.Snapshot?.IsDirty == true
+            ? $"这是 DSH 源码仓库，不是 dsh++。检测到 DSH 工作区存在未提交或未跟踪修改。为避免覆盖你的源码或插件配置，当前不会自动拉取；启动器不会 push。请先在 DSH 仓库外部完成备份/冲突处理。\n\n{_updateCoordinator.BackupPolicyDescription}"
+            : $"这是 DSH 源码仓库更新，不是 dsh++ 更新。将停止 DSH，执行 fast-forward 更新、安装依赖和构建。\n\n{_updateCoordinator.BackupPolicyDescription}\n\n继续吗？";
+        if (MessageBox.Show(this, confirmation, "确认 DSH 更新",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
             return;
         await RunOperationAsync("拉取更新", async cancellationToken =>
@@ -207,7 +213,7 @@ public sealed class DshManagementPage : PageBase
             var result = await _updateCoordinator.PullAsync(cancellationToken);
             if (result.ProcessResult is not null)
                 LogProcess(result.Stage, result.ProcessResult);
-            _log.Append($"更新阶段 {result.Stage}：{result.Message}");
+            _log.Append($"DSH 更新阶段 {result.Stage}：{result.Message}");
             _lastUpdateCheck = null;
             _pullButton.Enabled = false;
             await RefreshAsync(cancellationToken);
@@ -251,6 +257,7 @@ public sealed class DshManagementPage : PageBase
     {
         var result = await _statusProbe.ProbeAsync(cancellationToken);
         CurrentServiceState = result.State;
+        ServiceStateChanged?.Invoke(result.State);
         var color = result.State == ServiceState.Running ? Theme.Palette.Success
             : result.State == ServiceState.Stopped ? Theme.Palette.Muted : Theme.Palette.Warning;
         SetStatus(result.State.ToString(), color);
@@ -273,8 +280,20 @@ public sealed class DshManagementPage : PageBase
     {
         _versionCard.SetValue(snapshot.LocalPackageVersion, snapshot.Root);
         _commitCard.SetValue(snapshot.ShortSha, snapshot.Branch);
-        _remoteCard.SetValue(snapshot.IsDirty ? "工作区有改动" : "工作区干净",
-            snapshot.RemoteUrl);
+        var hasProtectedScripts = snapshot.LocalOnlyChanges.Count > 0;
+        var headline = snapshot.IsDirty
+            ? "DSH 工作区有阻止更新的修改"
+            : hasProtectedScripts
+                ? "DSH 有受保护的本地脚本"
+                : "DSH 工作区干净";
+        var detail = snapshot.IsDirty
+            ? $"本地 DSH 源码有修改；dsh++ 不会 push（{snapshot.Root}）"
+            : hasProtectedScripts
+                ? $"已识别并保留 {snapshot.LocalOnlyChanges.Count} 个本地启动脚本；DSH 更新时按备份策略处理（{snapshot.Root}）"
+                : $"仅检测 DSH 源码（{snapshot.Root}）";
+        _remoteCard.SetValue(
+            headline,
+            detail);
     }
 
     private void SetStatus(string text, Color color)

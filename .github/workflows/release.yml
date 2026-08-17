@@ -135,11 +135,12 @@ jobs:
           set -euo pipefail
           publish_dir="$GITHUB_WORKSPACE/staging/publish-${{ matrix.arch }}"
           app_dir="$GITHUB_WORKSPACE/staging/dsh++.app"
+          version="${GITHUB_REF_NAME#v}"
           mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
           cp -R "$publish_dir/." "$app_dir/Contents/MacOS/"
           mv "$app_dir/Contents/MacOS/dsh++-avalonia" "$app_dir/Contents/MacOS/dsh++"
           chmod +x "$app_dir/Contents/MacOS/dsh++"
-          cat > "$app_dir/Contents/Info.plist" <<'PLIST'
+          cat > "$app_dir/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict>
@@ -148,8 +149,8 @@ jobs:
             <key>CFBundleIdentifier</key><string>com.qichengxiaoqi.dshplusplus</string>
             <key>CFBundleName</key><string>dsh++</string>
             <key>CFBundlePackageType</key><string>APPL</string>
-            <key>CFBundleShortVersionString</key><string>0.2.0</string>
-            <key>CFBundleVersion</key><string>0.2.0</string>
+            <key>CFBundleShortVersionString</key><string>${version}</string>
+            <key>CFBundleVersion</key><string>${version}</string>
           </dict></plist>
           PLIST
 

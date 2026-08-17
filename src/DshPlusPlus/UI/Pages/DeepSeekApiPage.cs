@@ -10,7 +10,7 @@ namespace DshPlusPlus.UI.Pages;
 public sealed class DeepSeekApiPage : PageBase
 {
     private const string ApiKeyName = "DEEPSEEK_API_KEY";
-    private readonly LauncherSettings _settings;
+    private LauncherSettings _settings;
     private readonly DshCredentialStore _credentialStore;
     private readonly IDeepSeekApiClient _apiClient;
     private readonly TextBox _keyBox = new();
@@ -36,6 +36,13 @@ public sealed class DeepSeekApiPage : PageBase
         RefreshCredentialStatus();
     }
 
+    public void UpdateSettings(LauncherSettings settings)
+    {
+        _settings = settings;
+        _keyBox.Clear();
+        RefreshCredentialStatus();
+    }
+
     private void Build()
     {
         var layout = CreatePageLayout(3);
@@ -44,43 +51,70 @@ public sealed class DeepSeekApiPage : PageBase
 
         var auth = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             ColumnCount = 1,
             RowCount = 4,
             AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             BackColor = Theme.Palette.Surface
         };
         auth.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var keyHeight = UiMetrics.PixelsFromDip(38, DeviceDpi, Theme.Settings.FontScale);
+        auth.RowStyles.Add(new RowStyle(SizeType.Absolute, keyHeight));
         auth.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         auth.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        auth.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        var keyLabel = new Label { Text = "本地 API Key", Dock = DockStyle.Fill, AutoSize = true, ForeColor = Theme.Palette.Text, Tag = "section" };
+        var keyLabel = new Label { Text = "本地 API Key", Dock = DockStyle.Top, AutoSize = true, ForeColor = Theme.Palette.Text, Tag = "section" };
         auth.Controls.Add(keyLabel, 0, 0);
-        var keyLine = new FlowLayoutPanel
+        var keyLine = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = new Padding(0),
+            Padding = new Padding(0, 2, 0, 2),
+            BackColor = Theme.Palette.Surface
         };
-        _keyBox.MinimumSize = new Size(220, 0);
-        _keyBox.Width = 340;
+        keyLine.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        keyLine.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        keyLine.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        keyLine.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _keyBox.Dock = DockStyle.Fill;
+        _keyBox.MinimumSize = new Size(
+            UiMetrics.PixelsFromDip(UiMetrics.ApiKeyInputMinimumDip, DeviceDpi, Theme.Settings.FontScale),
+            Math.Max(24, keyHeight - 8));
         _keyBox.PasswordChar = '●';
-        _keyBox.Margin = new Padding(0, 3, 8, 3);
+        _keyBox.Margin = new Padding(0, 2, 8, 2);
         var save = new GlowButton("保存到 DSH", Theme.Palette, primary: true);
+        save.Dock = DockStyle.Fill;
         save.Click += SaveKeyAsync;
         var clear = new GlowButton("清除", Theme.Palette);
+        clear.Dock = DockStyle.Fill;
         clear.Click += ClearKeyAsync;
-        keyLine.Controls.AddRange([_keyBox, save, clear]);
+        keyLine.Controls.Add(_keyBox, 0, 0);
+        keyLine.Controls.Add(save, 1, 0);
+        keyLine.Controls.Add(clear, 2, 0);
         auth.Controls.Add(keyLine, 0, 1);
+        _keyStatus.AutoSize = true;
+        _keyStatus.Dock = DockStyle.Top;
         auth.Controls.Add(_keyStatus, 0, 2);
-        var links = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, AutoSize = true };
+        var links = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            WrapContents = true,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Margin = new Padding(0, 4, 0, 0)
+        };
         var github = new GlowButton("GitHub 仓库", Theme.Palette);
         github.Click += (_, _) => OpenLink("https://github.com/deepseek-ai/deepseek-harness");
         var console = new GlowButton("DeepSeek 控制台", Theme.Palette);
         console.Click += (_, _) => OpenLink("https://platform.deepseek.com/usage");
         links.Controls.AddRange([github, console]);
         auth.Controls.Add(links, 0, 3);
-        layout.Controls.Add(Card(auth, "凭据与入口"), 0, 1);
+        auth.MinimumSize = new Size(0, UiMetrics.PixelsFromDip(132, DeviceDpi, Theme.Settings.FontScale));
+        var authCard = Card(auth, "凭据与入口");
+        authCard.MinimumSize = new Size(0, UiMetrics.PixelsFromDip(190, DeviceDpi, Theme.Settings.FontScale));
+        layout.Controls.Add(authCard, 0, 1);
 
         var resultGrid = new TableLayoutPanel
         {

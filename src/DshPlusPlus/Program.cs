@@ -23,10 +23,12 @@ internal static class Program
         var statusProbe = new ServiceStatusProbe(paths);
         var gitRepository = new GitRepositoryService(paths, runner);
         var projectCommands = new ProjectCommandService(paths, runner);
+        var serviceScriptBackup = new DshServiceScriptBackup(paths.ServiceScript);
         var updateCoordinator = new UpdateCoordinator(
             gitRepository,
             projectCommands,
-            serviceController);
+            serviceController,
+            serviceScriptBackup);
         var credentialStore = new DshCredentialStore();
         var apiClient = new DeepSeekApiClient();
         var runtimeInventory = new RuntimePluginInventoryClient();

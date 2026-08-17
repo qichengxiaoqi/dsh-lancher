@@ -151,6 +151,10 @@ finally {
         {
             return Failure("无法连接 GitHub 更新服务。");
         }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return Failure($"检查 GitHub Release 失败：{ex.Message}");
+        }
         catch (JsonException)
         {
             return Failure("GitHub Release 数据格式无效。");

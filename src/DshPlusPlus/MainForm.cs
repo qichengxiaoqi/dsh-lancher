@@ -25,15 +25,19 @@ public sealed class MainForm : Form
     private readonly ContextMenuStrip _trayMenu = new();
     private StatusChip? _trayStatusChip;
     private DshManagementPage? _dshManagementPage;
+    private DeepSeekApiPage? _deepSeekApiPage;
+    private SystemSettingsPage? _systemSettingsPage;
+    private PluginSettingsPage? _pluginSettingsPage;
     private LauncherSettingsPage? _launcherSettingsPage;
     private bool _allowClose;
     private bool _isInTray;
     private bool _navigationCollapsed;
+    private TrayStatusKind _trayStatusKind = TrayStatusKind.Checking;
+    private ThemePalette? _trayPalette;
     private TableLayoutPanel? _sidebar;
     private Label? _brandKicker;
     private Label? _brandName;
     private Label? _footerLabel;
-    private Button? _navigationToggle;
     private string _activePage = string.Empty;
 
     public MainForm(
@@ -56,7 +60,7 @@ public sealed class MainForm : Form
         _settingsStore = settingsStore;
         _launcherUpdateService = launcherUpdateService;
         _theme = new ThemeManager(settings.Theme);
-        _navigationCollapsed = settings.Theme.NavigationCollapsed;
+        _navigationCollapsed = false;
 
         Text = "dsh++ · DeepSeek Harness Control Deck";
         StartPosition = FormStartPosition.CenterScreen;
@@ -81,8 +85,15 @@ public sealed class MainForm : Form
             patchService,
             pathDiscovery,
             launcherUpdateService);
+        _deepSeekApiPage = _pages.Values.OfType<DeepSeekApiPage>().Single();
+        _systemSettingsPage = _pages.Values.OfType<SystemSettingsPage>().Single();
+        _pluginSettingsPage = _pages.Values.OfType<PluginSettingsPage>().Single();
         ConfigureTrayIcon();
         _theme.Apply(this);
+        ApplyNavigationMode(UiMetrics.ResolveNavigationMode(
+            settings.Theme.NavigationCollapsed,
+            settings.Theme.AutoCollapseNavigation,
+            ClientSize.Width).IsCollapsed);
         SelectPage(settings.StartPage);
         _refreshTimer.Interval = Math.Max(5000, settings.RefreshSeconds * 1000);
         _refreshTimer.Tick += async (_, _) => await RefreshActivePageAsync();
@@ -175,24 +186,6 @@ public sealed class MainForm : Form
             Tag = "small"
         };
         brandHeader.Controls.Add(_brandKicker);
-        _navigationToggle = new Button
-        {
-            Text = _navigationCollapsed ? ">" : "<",
-            Dock = DockStyle.Right,
-            Width = 26,
-            Height = 24,
-            FlatStyle = FlatStyle.Flat,
-            FlatAppearance = { BorderSize = 0 },
-            BackColor = _theme.Palette.Surface,
-            ForeColor = _theme.Palette.Muted,
-            Cursor = Cursors.Hand,
-            AccessibleName = "收缩或展开导航栏",
-            AccessibleRole = AccessibleRole.PushButton,
-            Tag = "small"
-        };
-        _navigationToggle.Click += (_, _) => ToggleNavigation();
-        _navigationToolTip.SetToolTip(_navigationToggle, _navigationCollapsed ? "展开导航栏" : "收缩导航栏");
-        brandHeader.Controls.Add(_navigationToggle);
         _brandName = new Label
         {
             Text = "dsh++",
@@ -293,7 +286,9 @@ public sealed class MainForm : Form
     private void ConfigureTrayIcon()
     {
         _dshManagementPage = _pages.Values.OfType<DshManagementPage>().Single();
-        _notifyIcon.Icon = TrayIconFactory.Create(_theme.Palette);
+        _dshManagementPage.ServiceStateChanged += state =>
+            UpdateTrayStatus(DescribeState(state), TrayStatusMapper.From(state, busy: false));
+        _notifyIcon.Icon = TrayIconFactory.Create(_theme.Palette, TrayStatusKind.Checking);
         _notifyIcon.Text = "dsh++ · DeepSeek Harness";
         _notifyIcon.Visible = true;
         _notifyIcon.ContextMenuStrip = _trayMenu;
@@ -306,7 +301,7 @@ public sealed class MainForm : Form
         var exit = new ToolStripMenuItem("退出 dsh++");
         exit.Click += (_, _) => ExitApplication();
         _trayMenu.Items.AddRange([open, refresh, new ToolStripSeparator(), exit]);
-        UpdateTrayStatus("就绪");
+        UpdateTrayStatus("正在检测 DSH", TrayStatusKind.Checking);
     }
 
     private async Task RefreshDshStatusFromTrayAsync()
@@ -315,25 +310,47 @@ public sealed class MainForm : Form
             return;
         try
         {
+            UpdateTrayStatus("正在检测 DSH", TrayStatusKind.Checking);
             await _dshManagementPage.RefreshAsync(CancellationToken.None);
-            UpdateTrayStatus(DescribeState(_dshManagementPage.CurrentServiceState));
+            UpdateTrayStatus(
+                DescribeState(_dshManagementPage.CurrentServiceState),
+                TrayStatusMapper.From(_dshManagementPage.CurrentServiceState, busy: false));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            UpdateTrayStatus("异常");
+            UpdateTrayStatus("DSH 探测异常", TrayStatusKind.Attention);
         }
     }
 
-    private void UpdateTrayStatus(string status)
+    private void UpdateTrayStatus(string status, TrayStatusKind? kind = null)
     {
         if (IsDisposed)
             return;
+        var visual = kind
+                     ?? (_dshManagementPage is null
+                         ? TrayStatusKind.Checking
+                         : TrayStatusMapper.From(_dshManagementPage.CurrentServiceState, busy: false));
+        if (_trayStatusKind != visual || _trayPalette != _theme.Palette || _notifyIcon.Icon is null)
+        {
+            var previousIcon = _notifyIcon.Icon;
+            _notifyIcon.Icon = TrayIconFactory.Create(_theme.Palette, visual);
+            previousIcon?.Dispose();
+            _trayStatusKind = visual;
+            _trayPalette = _theme.Palette;
+        }
+        var color = visual switch
+        {
+            TrayStatusKind.Connected => _theme.Palette.Success,
+            TrayStatusKind.Disconnected => _theme.Palette.Danger,
+            TrayStatusKind.Attention => _theme.Palette.Warning,
+            _ => _theme.Palette.Warning
+        };
         var normalized = status.Length > 36 ? status[..36] : status;
         _notifyIcon.Text = $"dsh++ - {normalized}";
         _trayStatusChip?.SetState(
             _navigationCollapsed ? "●" : $"托盘 · {normalized}",
-            _theme.Palette.Accent,
-            _theme.Palette.AccentSoft);
+            color,
+            Color.FromArgb(35, color));
         if (_trayStatusChip is not null)
             _navigationToolTip.SetToolTip(_trayStatusChip, $"托盘：{normalized}");
     }
@@ -366,45 +383,31 @@ public sealed class MainForm : Form
 
     private void HandleResponsiveLayout()
     {
-        var autoCollapsed = _settings.Theme.AutoCollapseNavigation
-            && UiMetrics.ShouldCollapseNavigation(ClientSize.Width);
-        var collapsed = _settings.Theme.NavigationCollapsed || autoCollapsed;
+        var collapsed = UiMetrics.ResolveNavigationMode(
+            _settings.Theme.NavigationCollapsed,
+            _settings.Theme.AutoCollapseNavigation,
+            ClientSize.Width).IsCollapsed;
         if (collapsed != _navigationCollapsed)
             ApplyNavigationMode(collapsed);
     }
 
-    private void ToggleNavigation()
-    {
-        var expand = _navigationCollapsed;
-        var theme = _settings.Theme with { NavigationCollapsed = !expand };
-        _settings = _settings with { Theme = theme };
-        ApplyNavigationMode(expand);
-        _ = PersistNavigationPreferenceAsync();
-    }
-
-    private async Task PersistNavigationPreferenceAsync()
-    {
-        try
-        {
-            await _settingsStore.SaveAsync(_settings, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine(ex);
-        }
-    }
-
     private void ApplyNavigationMode(bool collapsed)
     {
-        _navigationCollapsed = collapsed;
+        // The text navigation is intentionally always expanded. Compact mode
+        // caused labels to be clipped on narrow windows and was not reliable
+        // with DPI-scaled fonts.
+        collapsed = false;
+        _navigationCollapsed = false;
         var width = UiMetrics.NavigationWidth(collapsed, _settings.Theme.NavigationWidth);
         _shell.ColumnStyles[0].Width = width;
         if (_sidebar is not null)
-            _sidebar.Padding = collapsed ? new Padding(8, 18, 8, 14) : new Padding(16, 18, 12, 14);
+            _sidebar.Padding = new Padding(16, 18, 12, 14);
         foreach (var pair in _navigationButtons)
         {
-            pair.Value.SetCollapsed(collapsed);
-            pair.Value.Width = Math.Max(56, width - (collapsed ? 16 : 28));
+            pair.Value.ApplyLayout(
+                collapsed,
+                Math.Max(56, width - (collapsed ? 16 : 28)),
+                DeviceDpi);
             pair.Value.IsActive = pair.Key == _activePage;
             pair.Value.Invalidate();
         }
@@ -413,21 +416,20 @@ public sealed class MainForm : Form
             _brandKicker.Visible = !collapsed;
         if (_brandName is not null)
         {
-            _brandName.Text = collapsed ? "d" : "dsh++";
-            _brandName.TextAlign = collapsed ? ContentAlignment.MiddleCenter : ContentAlignment.MiddleLeft;
+            _brandName.Text = "dsh++";
+            _brandName.TextAlign = ContentAlignment.MiddleLeft;
         }
         if (_footerLabel is not null)
-            _footerLabel.Visible = !collapsed;
-        if (_navigationToggle is not null)
-        {
-            _navigationToggle.Text = collapsed ? ">" : "<";
-            _navigationToolTip.SetToolTip(_navigationToggle, collapsed ? "展开导航栏" : "收缩导航栏");
-        }
+            _footerLabel.Visible = true;
         if (_trayStatusChip is not null)
             _navigationToolTip.SetToolTip(_trayStatusChip, "托盘状态");
         _navigation.PerformLayout();
         _shell.PerformLayout();
-        UpdateTrayStatus(_dshManagementPage is null ? "就绪" : DescribeState(_dshManagementPage.CurrentServiceState));
+        UpdateTrayStatus(
+            _dshManagementPage is null ? "正在检测 DSH" : DescribeState(_dshManagementPage.CurrentServiceState),
+            _dshManagementPage is null
+                ? TrayStatusKind.Checking
+                : TrayStatusMapper.From(_dshManagementPage.CurrentServiceState, busy: false));
     }
 
     private void HideToTray()
@@ -438,7 +440,11 @@ public sealed class MainForm : Form
         _refreshTimer.Stop();
         ShowInTaskbar = false;
         Hide();
-        UpdateTrayStatus("后台待命");
+        UpdateTrayStatus(
+            "后台待命",
+            _dshManagementPage is null
+                ? TrayStatusKind.Checking
+                : TrayStatusMapper.From(_dshManagementPage.CurrentServiceState, busy: false));
     }
 
     private void ShowFromTray()
@@ -450,9 +456,11 @@ public sealed class MainForm : Form
         Activate();
         _refreshTimer.Start();
         _ = RefreshActivePageAsync();
-        UpdateTrayStatus(_dshManagementPage is null
-            ? "就绪"
-            : DescribeState(_dshManagementPage.CurrentServiceState));
+        UpdateTrayStatus(
+            _dshManagementPage is null ? "正在检测 DSH" : DescribeState(_dshManagementPage.CurrentServiceState),
+            _dshManagementPage is null
+                ? TrayStatusKind.Checking
+                : TrayStatusMapper.From(_dshManagementPage.CurrentServiceState, busy: false));
     }
 
     private void ExitApplication()
@@ -494,7 +502,9 @@ public sealed class MainForm : Form
             {
                 await page.RefreshAsync(CancellationToken.None);
                 if (ReferenceEquals(page, _dshManagementPage))
-                    UpdateTrayStatus(DescribeState(_dshManagementPage.CurrentServiceState));
+                    UpdateTrayStatus(
+                        DescribeState(_dshManagementPage.CurrentServiceState),
+                        TrayStatusMapper.From(_dshManagementPage.CurrentServiceState, busy: false));
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -507,14 +517,19 @@ public sealed class MainForm : Form
     {
         _settings = settings;
         _launcherSettingsPage?.UpdateSettings(settings);
+        _deepSeekApiPage?.UpdateSettings(settings);
+        _systemSettingsPage?.UpdatePaths(settings.Paths);
+        _pluginSettingsPage?.UpdatePaths(settings.Paths);
         _theme.Update(settings.Theme);
         foreach (var page in _pages.Values)
             page.ApplyCurrentTheme();
         _theme.Apply(this);
         _theme.ReleaseRetiredFonts();
         _refreshTimer.Interval = Math.Max(5000, settings.RefreshSeconds * 1000);
-        ApplyNavigationMode(settings.Theme.NavigationCollapsed
-            || (settings.Theme.AutoCollapseNavigation && UiMetrics.ShouldCollapseNavigation(ClientSize.Width)));
+        ApplyNavigationMode(UiMetrics.ResolveNavigationMode(
+            settings.Theme.NavigationCollapsed,
+            settings.Theme.AutoCollapseNavigation,
+            ClientSize.Width).IsCollapsed);
         SelectPage(settings.StartPage);
         await Task.CompletedTask;
     }
@@ -556,7 +571,7 @@ public sealed class MainForm : Form
                 return;
 
             var version = result.LatestVersion?.ToString() ?? "新版本";
-            UpdateTrayStatus($"有新版本 {version}");
+            UpdateTrayStatus($"有新版本 {version}", TrayStatusKind.Attention);
             _notifyIcon.BalloonTipTitle = "dsh++ 有新版本";
             _notifyIcon.BalloonTipText = $"发现 dsh++ {version}，可在“启动器设置”中下载并重启。";
             _notifyIcon.ShowBalloonTip(5000);

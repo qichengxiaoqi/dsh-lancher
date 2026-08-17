@@ -17,15 +17,33 @@ static class Program
             Assert.Equal(140, UiMetrics.ClampFontScale(200));
             Assert.Equal(110, UiMetrics.ClampFontScale(110));
         });
-        Run("navigation collapses below threshold", () =>
+        Run("navigation stays expanded below threshold", () =>
         {
-            Assert.True(UiMetrics.ShouldCollapseNavigation(960));
+            Assert.False(UiMetrics.ShouldCollapseNavigation(960));
             Assert.False(UiMetrics.ShouldCollapseNavigation(1120));
         });
         Run("navigation width uses compact or expanded size", () =>
         {
             Assert.Equal(78, UiMetrics.NavigationWidth(true));
             Assert.Equal(224, UiMetrics.NavigationWidth(false));
+        });
+        Run("navigation mode always shows expanded content", () =>
+        {
+            var mode = UiMetrics.ResolveNavigationMode(
+                userCollapsed: true,
+                autoCollapse: true,
+                clientWidth: 960);
+            Assert.False(mode.IsCollapsed);
+            Assert.True(mode.ShowBrandDetails);
+            Assert.True(mode.ShowNavigationLabels);
+            Assert.True(mode.ShowFooterDetails);
+        });
+        Run("tray status maps DSH connectivity to traffic colors", () =>
+        {
+            Assert.Equal(TrayStatusKind.Connected, TrayStatusMapper.From(ServiceState.Running, busy: false));
+            Assert.Equal(TrayStatusKind.Disconnected, TrayStatusMapper.From(ServiceState.Stopped, busy: false));
+            Assert.Equal(TrayStatusKind.Checking, TrayStatusMapper.From(ServiceState.Running, busy: true));
+            Assert.Equal(TrayStatusKind.Attention, TrayStatusMapper.From(ServiceState.StartFailed, busy: false));
         });
         Run("font resolver follows available candidate order", () =>
         {
@@ -44,6 +62,11 @@ static class Program
         {
             Assert.True(UiMetrics.SafeHeight(24, 10, 36, 96) >= 36);
             Assert.True(UiMetrics.SafeHeight(30, 12, 36, 144) > UiMetrics.SafeHeight(30, 12, 36, 96));
+        });
+        Run("api key layout keeps a scalable input minimum", () =>
+        {
+            Assert.Equal(220, UiMetrics.PixelsFromDip(UiMetrics.ApiKeyInputMinimumDip, 96, 100));
+            Assert.True(UiMetrics.PixelsFromDip(UiMetrics.ApiKeyInputMinimumDip, 144, 120) > 220);
         });
         Run("navigation item preserves accessible title", () =>
         {
@@ -100,6 +123,8 @@ static class Program
             Assert.Equal(string.Empty, DshPaths.CreateDefault().Root);
             Assert.Equal(string.Empty, DshPaths.CreateDefault().PnpmStore);
             Assert.Equal("Obsidian", settings.Theme.Name);
+            Assert.False(settings.Theme.NavigationCollapsed);
+            Assert.False(settings.Theme.AutoCollapseNavigation);
         });
 
         await RunAsync("launcher update parses release and verifies asset", async () =>
@@ -198,6 +223,20 @@ static class Program
             Assert.Contains("超时", timedOut.Message);
         });
 
+        await RunAsync("launcher update converts unexpected check failures", async () =>
+        {
+            using var client = new HttpClient(new StubHttpHandler(_ =>
+                throw new ArgumentException("Parameter is not valid.")));
+            var result = await new LauncherUpdateService(
+                    client,
+                    Path.Combine(Path.GetTempPath(), "dsh++.exe"),
+                    new Version(0, 1, 0),
+                    TimeSpan.FromSeconds(2))
+                .CheckAsync(CancellationToken.None);
+            Assert.False(result.Succeeded);
+            Assert.Contains("检查", result.Message);
+        });
+
         await RunAsync("launcher update ignores draft and invalid releases", async () =>
         {
             const string draftJson = "{\"tag_name\":\"v9.9.9\",\"draft\":true,\"prerelease\":false}";
@@ -221,6 +260,31 @@ static class Program
                 .CheckAsync(CancellationToken.None);
             Assert.False(invalidResult.Succeeded);
             Assert.Contains("格式", invalidResult.Message);
+        });
+
+        Run("custom service script backup restores and cleans", () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-script-backup-{Guid.NewGuid():N}");
+            var source = Path.Combine(root, "DeepSeekHarnessService.ps1");
+            var backupRoot = Path.Combine(root, "backups");
+            Directory.CreateDirectory(root);
+            File.WriteAllText(source, "custom service script");
+            try
+            {
+                var backup = new DshServiceScriptBackup(source, backupRoot);
+                Assert.Contains("未知工作区修改仍会阻止拉取", backup.PolicyDescription);
+                var handle = backup.Prepare();
+                Assert.True(handle is not null);
+                File.WriteAllText(source, "changed during update");
+                backup.Restore(handle!);
+                Assert.Equal("custom service script", File.ReadAllText(source));
+                backup.Delete(handle!);
+                Assert.False(Directory.Exists(handle!.BackupDirectory));
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
         });
 
         Run("path discovery finds a portable sibling dsh environment", () =>
@@ -471,6 +535,41 @@ static class Program
             DeleteTree(root);
         });
 
+        await RunAsync("system instruction scanner updates configured paths", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-scan-rebind-{Guid.NewGuid():N}");
+            var firstRoot = Path.Combine(root, "first");
+            var secondRoot = Path.Combine(root, "second");
+            Directory.CreateDirectory(firstRoot);
+            Directory.CreateDirectory(secondRoot);
+            var firstFile = Path.Combine(firstRoot, "AGENTS.md");
+            var secondFile = Path.Combine(secondRoot, "AGENTS.md");
+            File.WriteAllText(firstFile, "first instructions");
+            File.WriteAllText(secondFile, "second instructions");
+            var firstPaths = LauncherPaths.CreateDefault() with
+            {
+                DshRoot = firstRoot,
+                DshHome = Path.Combine(firstRoot, "home"),
+                ProfileDirectory = Path.Combine(firstRoot, "profile")
+            };
+            var secondPaths = firstPaths with { DshRoot = secondRoot };
+            var scanner = new SystemInstructionScanner(firstPaths);
+
+            try
+            {
+                var first = await scanner.ScanAsync(CancellationToken.None);
+                Assert.True(first.Any(file => file.Path.Equals(firstFile, StringComparison.OrdinalIgnoreCase)));
+                scanner.UpdatePaths(secondPaths);
+                var second = await scanner.ScanAsync(CancellationToken.None);
+                Assert.True(second.Any(file => file.Path.Equals(secondFile, StringComparison.OrdinalIgnoreCase)));
+                Assert.False(second.Any(file => file.Path.Equals(firstFile, StringComparison.OrdinalIgnoreCase)));
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
         await RunAsync("plugin patch keeps full config and unrelated entries", async () =>
         {
             var root = Path.Combine(Path.GetTempPath(), $"dsh-plugin-patch-{Guid.NewGuid():N}");
@@ -549,6 +648,36 @@ static class Program
             }
         });
 
+        await RunAsync("known local DSH scripts do not block updates", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-local-scripts-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(root);
+            try
+            {
+                File.WriteAllText(Path.Combine(root, "package.json"), "{\"version\":\"0.1.0-test\"}");
+                var paths = PathsFor(root);
+                Directory.CreateDirectory(Path.GetDirectoryName(paths.ServiceScript)!);
+                File.WriteAllText(paths.ServiceScript, "custom service script");
+                File.WriteAllText(Path.Combine(root, "启动DeepSeekHarness.bat"), "custom wrapper");
+
+                var runner = new ProcessRunner();
+                await RunGit(runner, root, ["init"]);
+                await RunGit(runner, root, ["-c", "user.name=dsh-test", "-c", "user.email=dsh-test@example.invalid", "add", "package.json"]);
+                await RunGit(runner, root, ["-c", "user.name=dsh-test", "-c", "user.email=dsh-test@example.invalid", "commit", "-m", "initial"]);
+
+                var snapshot = await new GitRepositoryService(paths, runner)
+                    .ReadLocalSnapshotAsync(CancellationToken.None);
+                Assert.False(snapshot.IsDirty);
+                Assert.SequenceEqual(
+                    ["scripts/windows/DeepSeekHarnessService.ps1", "启动DeepSeekHarness.bat"],
+                    snapshot.LocalOnlyChanges.OrderBy(path => path, StringComparer.Ordinal).ToArray());
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
         await RunAsync("project commands preserve explicit pnpm store", async () =>
         {
             var paths = PathsFor(Environment.CurrentDirectory);
@@ -585,6 +714,39 @@ static class Program
             Assert.SequenceEqual(
                 ["pull", "--ff-only", "origin", "main"],
                 runner.Last.Arguments);
+        });
+
+        await RunAsync("DSH update backs up before update and cleans after success", async () =>
+        {
+            var calls = new List<string>();
+            var backup = new RecordingBackup(calls);
+            var result = await new UpdateCoordinator(
+                    new RecordingGit(UpdateState.UpdateAvailable, calls),
+                    new RecordingProject(false, calls),
+                    new RecordingService(calls),
+                    backup)
+                .PullAsync(CancellationToken.None);
+            Assert.True(result.Succeeded);
+            Assert.SequenceEqual(
+                ["check", "backup", "stop", "pull", "install", "build", "start", "delete-backup"],
+                calls);
+        });
+
+        await RunAsync("DSH update failure restores and keeps backup", async () =>
+        {
+            var calls = new List<string>();
+            var backup = new RecordingBackup(calls);
+            var result = await new UpdateCoordinator(
+                    new RecordingGit(UpdateState.UpdateAvailable, calls),
+                    new RecordingProject(true, calls),
+                    new RecordingService(calls),
+                    backup)
+                .PullAsync(CancellationToken.None);
+            Assert.False(result.Succeeded);
+            Assert.SequenceEqual(
+                ["check", "backup", "stop", "pull", "install", "build", "restore"],
+                calls);
+            Assert.False(backup.Deleted);
         });
 
         await RunAsync("dirty worktree blocks pull before stop", async () =>
@@ -782,6 +944,30 @@ static class Program
 
     private static ProcessResult Failure(string name) =>
         new(name, [], 1, string.Empty, "failed");
+
+    private sealed class RecordingBackup : IDshServiceScriptBackup
+    {
+        private readonly List<string> _calls;
+
+        public RecordingBackup(List<string> calls) => _calls = calls;
+
+        public bool Deleted { get; private set; }
+        public string PolicyDescription => "backup policy";
+
+        public DshServiceScriptBackupHandle? Prepare()
+        {
+            _calls.Add("backup");
+            return new("source", "backup", "backup-directory");
+        }
+
+        public void Restore(DshServiceScriptBackupHandle handle) => _calls.Add("restore");
+
+        public void Delete(DshServiceScriptBackupHandle handle)
+        {
+            _calls.Add("delete-backup");
+            Deleted = true;
+        }
+    }
 
     private sealed class RecordingGit : IGitRepositoryService
     {

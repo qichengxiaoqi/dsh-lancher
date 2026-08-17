@@ -19,7 +19,12 @@ public sealed class AvaloniaAppHost : IDisposable
         StatusProbe = new ServiceStatusProbe(Paths, _httpClient);
         GitRepository = new GitRepositoryService(Paths, Runner);
         ProjectCommands = new ProjectCommandService(Paths, Runner);
-        UpdateCoordinator = new UpdateCoordinator(GitRepository, ProjectCommands, ServiceController);
+        ServiceScriptBackup = new DshServiceScriptBackup(Paths.ServiceScript);
+        UpdateCoordinator = new UpdateCoordinator(
+            GitRepository,
+            ProjectCommands,
+            ServiceController,
+            ServiceScriptBackup);
         CredentialStore = new DshCredentialStore();
         ApiClient = new DeepSeekApiClient();
         RuntimeInventory = new RuntimePluginInventoryClient();
@@ -39,6 +44,7 @@ public sealed class AvaloniaAppHost : IDisposable
     public ServiceStatusProbe StatusProbe { get; }
     public IGitRepositoryService GitRepository { get; }
     public IProjectCommandService ProjectCommands { get; }
+    public DshServiceScriptBackup ServiceScriptBackup { get; }
     public UpdateCoordinator UpdateCoordinator { get; }
     public DshCredentialStore CredentialStore { get; }
     public DeepSeekApiClient ApiClient { get; }

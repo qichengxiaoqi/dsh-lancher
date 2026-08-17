@@ -51,11 +51,17 @@ public sealed class NavigationButton : Button
         Cursor = Cursors.Hand;
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
-        AutoSize = true;
-        AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        TabStop = false;
+        AutoSize = false;
         MinimumSize = new Size(56, 34);
+        Height = 42;
         Margin = new Padding(0, 3, 0, 3);
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        SetStyle(
+            ControlStyles.UserPaint
+            | ControlStyles.AllPaintingInWmPaint
+            | ControlStyles.OptimizedDoubleBuffer,
+            true);
+        SetStyle(ControlStyles.Selectable, false);
     }
 
     public NavigationItem Item { get; }
@@ -72,6 +78,13 @@ public sealed class NavigationButton : Button
         IsCollapsed = collapsed;
         AccessibleName = Item.AccessibleName;
         Invalidate();
+    }
+
+    public void ApplyLayout(bool collapsed, int width, int dpi)
+    {
+        SetCollapsed(collapsed);
+        Width = Math.Max(MinimumSize.Width, width);
+        Height = UiMetrics.SafeHeight(Font.GetHeight(Math.Max(1, dpi)), 12, 42, dpi);
     }
 
     protected override void OnMouseEnter(EventArgs e)
@@ -91,7 +104,6 @@ public sealed class NavigationButton : Button
     protected override void OnPaint(PaintEventArgs e)
     {
         var bounds = ClientRectangle;
-        bounds.Inflate(-1, -1);
         using var background = new SolidBrush(_hovered ? _palette.AccentSoft : BackColor);
         e.Graphics.FillRectangle(background, bounds);
         if (IsActive)

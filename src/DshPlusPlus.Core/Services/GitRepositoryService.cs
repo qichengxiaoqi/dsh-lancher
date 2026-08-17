@@ -38,7 +38,9 @@ public sealed class GitRepositoryService : IGitRepositoryService
         EnsureRepositoryFiles();
 
         var status = await RunRequiredAsync(
-            ["status", "--porcelain=v1", "--untracked-files=all"], ReadTimeout, cancellationToken);
+            ["-c", "core.quotepath=false", "status", "--porcelain=v1", "--untracked-files=all"],
+            ReadTimeout,
+            cancellationToken);
         var branch = await RunRequiredAsync(["branch", "--show-current"], ReadTimeout, cancellationToken);
         var head = await RunRequiredAsync(["rev-parse", "HEAD"], ReadTimeout, cancellationToken);
         var shortHead = await RunRequiredAsync(["rev-parse", "--short", "HEAD"], ReadTimeout, cancellationToken);
@@ -48,6 +50,14 @@ public sealed class GitRepositoryService : IGitRepositoryService
             ReadTimeout,
             cancellationToken);
         var localVersion = await ReadPackageVersionAsync(_paths.PackageJsonPath, cancellationToken);
+
+        var statusPaths = ParseStatusPaths(status.StandardOutput);
+        var localOnlyChanges = statusPaths
+            .Where(change => change.IsUntracked && IsKnownLocalFile(change.Path))
+            .Select(change => change.Path)
+            .ToArray();
+        var hasBlockingChanges = statusPaths.Any(change =>
+            !change.IsUntracked || !IsKnownLocalFile(change.Path));
 
         return new RepositorySnapshot(
             Root: _paths.Root,
@@ -61,7 +71,8 @@ public sealed class GitRepositoryService : IGitRepositoryService
             ResolvedRemoteRef: null,
             Ahead: 0,
             Behind: 0,
-            IsDirty: status.StandardOutput.Trim().Length > 0);
+            IsDirty: hasBlockingChanges,
+            localOnlyChanges: localOnlyChanges);
     }
 
     public async Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken)
@@ -121,7 +132,13 @@ public sealed class GitRepositoryService : IGitRepositoryService
             var state = UpdateDecision.Evaluate(ahead, behind, local.IsDirty);
             return new UpdateCheckResult(
                 state,
-                BuildMessage(state, ahead, behind, remoteShortSha.StandardOutput.Trim(), remoteVersion),
+                BuildMessage(
+                    state,
+                    ahead,
+                    behind,
+                    remoteShortSha.StandardOutput.Trim(),
+                    remoteVersion,
+                    snapshot.LocalOnlyChanges),
                 snapshot);
         }
         catch (OperationCanceledException)
@@ -252,6 +269,22 @@ public sealed class GitRepositoryService : IGitRepositoryService
     private static bool IsRemoteRef(string? value) =>
         value is not null && RemoteRefRegex.IsMatch(value);
 
+    private bool IsKnownLocalFile(string relativePath)
+    {
+        var fullPath = Path.GetFullPath(Path.Combine(_paths.Root, relativePath));
+        return _paths.KnownLocalFiles.Any(path =>
+            string.Equals(path, fullPath, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IReadOnlyList<GitStatusPath> ParseStatusPaths(string output) =>
+        output.Split(["\r\n", "\n", "\r"], StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => line.Length >= 3)
+            .Select(line => new GitStatusPath(
+                line[3..].Trim(),
+                line.StartsWith("??", StringComparison.Ordinal)))
+            .Where(change => change.Path.Length > 0)
+            .ToArray();
+
     private static string? NullIfEmpty(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -260,14 +293,19 @@ public sealed class GitRepositoryService : IGitRepositoryService
         int ahead,
         int behind,
         string remoteShortSha,
-        string? remoteVersion) => state switch
+        string? remoteVersion,
+        IReadOnlyList<string> localOnlyChanges) => state switch
         {
             UpdateState.Latest => $"已是最新（远程 {remoteShortSha}，版本 {remoteVersion ?? "未知"}）。",
+            UpdateState.UpdateAvailable when localOnlyChanges.Count > 0 =>
+                $"发现 {behind} 个可用更新（远程 {remoteShortSha}，版本 {remoteVersion ?? "未知"}）；已识别 {localOnlyChanges.Count} 个本地脚本，更新时会保护。",
             UpdateState.UpdateAvailable => $"发现 {behind} 个可用更新（远程 {remoteShortSha}，版本 {remoteVersion ?? "未知"}）。",
             UpdateState.LocalAhead => $"本地领先远程 {ahead} 个提交；启动器不提供 push。",
             UpdateState.DirtyWorktree => "工作区有未提交或未跟踪修改，禁止拉取更新。",
             _ => $"远程状态：{state}。"
         };
+
+    private sealed record GitStatusPath(string Path, bool IsUntracked);
 
     private static string Summarize(ProcessResult result)
     {

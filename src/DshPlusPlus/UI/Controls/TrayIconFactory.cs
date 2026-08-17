@@ -6,14 +6,22 @@ namespace DshPlusPlus.UI.Controls;
 
 public static class TrayIconFactory
 {
-    public static Icon Create(ThemePalette palette)
+    public static Icon Create(ThemePalette palette, TrayStatusKind status = TrayStatusKind.Checking)
     {
+        var statusColor = status switch
+        {
+            TrayStatusKind.Connected => palette.Success,
+            TrayStatusKind.Disconnected => palette.Danger,
+            TrayStatusKind.Attention => palette.Warning,
+            _ => palette.Warning
+        };
+
         using var bitmap = new Bitmap(32, 32);
         using (var graphics = Graphics.FromImage(bitmap))
         using (var background = new SolidBrush(palette.Background))
-        using (var accent = new SolidBrush(palette.Accent))
+        using (var accent = new SolidBrush(statusColor))
         using (var highlight = new SolidBrush(palette.Text))
-        using (var outline = new Pen(palette.Accent, 2F))
+        using (var outline = new Pen(statusColor, 2F))
         using (var font = new Font("Segoe UI Semibold", 14F, FontStyle.Bold, GraphicsUnit.Pixel))
         {
             graphics.SmoothingMode = SmoothingMode.AntiAlias;

@@ -8,6 +8,8 @@ public sealed class ThemeManager : IDisposable
 {
     private readonly List<ThemeFonts> _retiredFonts = [];
     private ThemeFonts _fonts;
+    private EventHandler? _retiredFontsReleaseHandler;
+    private bool _disposed;
 
     public ThemeManager(ThemeSettings settings)
     {
@@ -72,15 +74,45 @@ public sealed class ThemeManager : IDisposable
 
     public void ReleaseRetiredFonts()
     {
-        foreach (var fonts in _retiredFonts)
-            fonts.Dispose();
-        _retiredFonts.Clear();
+        if (_retiredFonts.Count == 0 || _retiredFontsReleaseHandler is not null)
+            return;
+
+        if (!Application.MessageLoop)
+        {
+            DisposeRetiredFonts();
+            return;
+        }
+
+        EventHandler handler = null!;
+        handler = (_, _) =>
+        {
+            Application.Idle -= handler;
+            _retiredFontsReleaseHandler = null;
+            DisposeRetiredFonts();
+        };
+        _retiredFontsReleaseHandler = handler;
+        Application.Idle += handler;
     }
 
     public void Dispose()
     {
-        ReleaseRetiredFonts();
+        if (_disposed)
+            return;
+        _disposed = true;
+        if (_retiredFontsReleaseHandler is { } handler)
+        {
+            Application.Idle -= handler;
+            _retiredFontsReleaseHandler = null;
+        }
+        DisposeRetiredFonts();
         _fonts.Dispose();
+    }
+
+    private void DisposeRetiredFonts()
+    {
+        foreach (var fonts in _retiredFonts)
+            fonts.Dispose();
+        _retiredFonts.Clear();
     }
 
     private Font FontFor(Control control) => (control.Tag as string) switch

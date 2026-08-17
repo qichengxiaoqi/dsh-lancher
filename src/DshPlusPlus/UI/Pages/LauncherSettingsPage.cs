@@ -18,8 +18,6 @@ public sealed class LauncherSettingsPage : PageBase
     private readonly CheckBox _glow = new();
     private readonly NumericUpDown _fontScale = new();
     private readonly NumericUpDown _navigationWidth = new();
-    private readonly CheckBox _navigationCollapsed = new();
-    private readonly CheckBox _autoCollapseNavigation = new();
     private readonly ComboBox _startPage = new();
     private readonly NumericUpDown _refreshSeconds = new();
     private readonly CheckBox _showLogs = new();
@@ -39,7 +37,7 @@ public sealed class LauncherSettingsPage : PageBase
         LauncherUpdateService updateService,
         Action requestRestart,
         ThemeManager theme)
-        : base(theme, "启动器设置", "定制 dsh++ 的颜色、密度、导航和启动行为。")
+        : base(theme, "启动器设置", "定制 dsh++ 的颜色、密度、导航和启动行为；这里的更新来自 GitHub Release，不检查 DSH 源码。")
     {
         _settings = settings;
         _store = store;
@@ -49,9 +47,9 @@ public sealed class LauncherSettingsPage : PageBase
         _status = MutedLabel("设置保存在当前用户的 LocalAppData");
         _updateStatus = MutedLabel("尚未检查启动器更新");
         _updateStatus.AutoSize = true;
-        _checkUpdateButton = new GlowButton("立即检查", Theme.Palette);
+        _checkUpdateButton = new GlowButton("检查 dsh++ Release", Theme.Palette);
         _checkUpdateButton.Click += CheckUpdateAsync;
-        _downloadUpdateButton = new GlowButton("下载并重启", Theme.Palette, primary: true)
+        _downloadUpdateButton = new GlowButton("下载 x64 并重启", Theme.Palette, primary: true)
         {
             Enabled = false
         };
@@ -81,8 +79,7 @@ public sealed class LauncherSettingsPage : PageBase
         AddRow(table, "微光效果", _glow);
         AddRow(table, "字体缩放", _fontScale);
         AddRow(table, "导航栏宽度", _navigationWidth);
-        AddRow(table, "默认收缩导航", _navigationCollapsed);
-        AddRow(table, "窄屏自动收缩", _autoCollapseNavigation);
+        AddRow(table, "导航栏模式", MutedLabel("固定展开文字导航；窄窗口通过滚动保持完整显示"));
         AddRow(table, "默认页面", _startPage);
         AddRow(table, "自动刷新（秒）", _refreshSeconds);
         AddRow(table, "显示日志抽屉", _showLogs);
@@ -99,7 +96,7 @@ public sealed class LauncherSettingsPage : PageBase
         updateActions.Controls.Add(_updateStatus);
         updateActions.Controls.Add(_checkUpdateButton);
         updateActions.Controls.Add(_downloadUpdateButton);
-        AddRow(table, "启动器更新", updateActions);
+        AddRow(table, "dsh++ Release 更新", updateActions);
         layout.Controls.Add(Card(new Panel { Dock = DockStyle.Fill, AutoScroll = true, Controls = { table } }, "界面定制"), 0, 1);
 
         var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, Padding = new Padding(6, 5, 0, 0) };
@@ -150,10 +147,6 @@ public sealed class LauncherSettingsPage : PageBase
         _navigationWidth.Minimum = 180;
         _navigationWidth.Maximum = 320;
         _navigationWidth.Value = Math.Clamp(_settings.Theme.NavigationWidth, 180, 320);
-        _navigationCollapsed.Text = "启动时使用图标导航";
-        _navigationCollapsed.Checked = _settings.Theme.NavigationCollapsed;
-        _autoCollapseNavigation.Text = "窗口变窄时自动切换图标导航";
-        _autoCollapseNavigation.Checked = _settings.Theme.AutoCollapseNavigation;
         _startPage.Items.Clear();
         _startPage.Items.AddRange(["DSH 管理", "安装维护", "DeepSeek API", "系统级设置", "插件设置", "启动器设置"]);
         _startPage.SelectedItem = _settings.StartPage;
@@ -178,8 +171,8 @@ public sealed class LauncherSettingsPage : PageBase
             Glow = _glow.Checked,
             FontScale = (int)_fontScale.Value,
             NavigationWidth = (int)_navigationWidth.Value,
-            NavigationCollapsed = _navigationCollapsed.Checked,
-            AutoCollapseNavigation = _autoCollapseNavigation.Checked
+            NavigationCollapsed = false,
+            AutoCollapseNavigation = false
         };
         var next = _settings with
         {
@@ -196,7 +189,15 @@ public sealed class LauncherSettingsPage : PageBase
             _settings = next;
             _status.Text = "已保存并应用主题";
             _status.ForeColor = Theme.Palette.Success;
-            await _onSaved(next);
+            try
+            {
+                await _onSaved(next);
+            }
+            catch (Exception ex)
+            {
+                _status.Text = $"已保存，但应用失败：{ex.Message}";
+                _status.ForeColor = Theme.Palette.Warning;
+            }
         }
         catch (Exception ex)
         {
@@ -239,6 +240,10 @@ public sealed class LauncherSettingsPage : PageBase
         catch (OperationCanceledException)
         {
             SetAutomaticUpdateStatus("更新检查已取消。", null, false);
+        }
+        catch (Exception ex)
+        {
+            SetAutomaticUpdateStatus($"检查失败：{ex.Message}", null, false);
         }
         finally
         {

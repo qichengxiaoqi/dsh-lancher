@@ -13,4 +13,8 @@ public sealed record RepositorySnapshot(
     int Ahead,
     int Behind,
     bool IsDirty,
-    string? Error = null);
+    string? Error = null,
+    IReadOnlyList<string>? localOnlyChanges = null)
+{
+    public IReadOnlyList<string> LocalOnlyChanges => localOnlyChanges ?? Array.Empty<string>();
+}

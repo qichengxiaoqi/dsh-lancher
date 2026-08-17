@@ -20,7 +20,7 @@ public sealed class SystemInstructionScanner
         "bin", "obj", "dist", "build", "out", "coverage", "artifacts", "sessions"
     };
 
-    private readonly LauncherPaths _paths;
+    private LauncherPaths _paths;
     private readonly SystemInstructionScanOptions _options;
     private readonly SemaphoreSlim _scanGate = new(1, 1);
     private readonly object _cacheGate = new();
@@ -49,6 +49,13 @@ public sealed class SystemInstructionScanner
             _cachedFiles = null;
             _cachedAt = default;
         }
+    }
+
+    public void UpdatePaths(LauncherPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        Volatile.Write(ref _paths, paths);
+        ClearCache();
     }
 
     private async Task<IReadOnlyList<SystemInstructionFileInfo>> ScanAsyncCore(
@@ -89,14 +96,15 @@ public sealed class SystemInstructionScanner
     private IReadOnlyList<SystemInstructionFileInfo> ScanCore(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var paths = Volatile.Read(ref _paths);
         var budget = new ScanBudget(_options, Stopwatch.StartNew());
         var candidates = new List<(string Path, string Scope, SystemInstructionKind Kind, string Note)>();
-        AddIfExists(candidates, Path.Combine(_paths.DshHome, "AGENTS.md"), "global", SystemInstructionKind.MarkdownInstruction, "DSH 全局指令");
-        AddProjectFilesBounded(candidates, _paths.DshRoot, cancellationToken, budget);
-        AddIfExists(candidates, Path.Combine(_paths.DshHome, "settings.yaml"), "global", SystemInstructionKind.StructuredSettings, "DSH 结构化设置");
-        AddIfExists(candidates, Path.Combine(_paths.DshHome, "cordis.patch.yml"), "home", SystemInstructionKind.ProfilePatch, "Home 插件配置覆盖");
-        AddIfExists(candidates, Path.Combine(_paths.ProfileDirectory, "cordis.patch.yml"), "profile", SystemInstructionKind.ProfilePatch, "Profile 插件配置覆盖");
-        AddIfExists(candidates, Path.Combine(_paths.DshRoot, ".claude", "skills"), "project", SystemInstructionKind.SkillLink, "Claude skills 兼容链接");
+        AddIfExists(candidates, Path.Combine(paths.DshHome, "AGENTS.md"), "global", SystemInstructionKind.MarkdownInstruction, "DSH 全局指令");
+        AddProjectFilesBounded(candidates, paths.DshRoot, cancellationToken, budget);
+        AddIfExists(candidates, Path.Combine(paths.DshHome, "settings.yaml"), "global", SystemInstructionKind.StructuredSettings, "DSH 结构化设置");
+        AddIfExists(candidates, Path.Combine(paths.DshHome, "cordis.patch.yml"), "home", SystemInstructionKind.ProfilePatch, "Home 插件配置覆盖");
+        AddIfExists(candidates, Path.Combine(paths.ProfileDirectory, "cordis.patch.yml"), "profile", SystemInstructionKind.ProfilePatch, "Profile 插件配置覆盖");
+        AddIfExists(candidates, Path.Combine(paths.DshRoot, ".claude", "skills"), "project", SystemInstructionKind.SkillLink, "Claude skills 兼容链接");
 
         var infos = new List<SystemInstructionFileInfo>();
         foreach (var candidate in candidates.DistinctBy(item => Path.GetFullPath(item.Path), StringComparer.OrdinalIgnoreCase))

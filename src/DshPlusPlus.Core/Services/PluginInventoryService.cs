@@ -6,13 +6,19 @@ namespace DshPlusPlus.Core.Services;
 
 public sealed class PluginInventoryService
 {
-    private readonly LauncherPaths _paths;
+    private LauncherPaths _paths;
     private readonly RuntimePluginInventoryClient _runtimeClient;
 
     public PluginInventoryService(LauncherPaths paths, RuntimePluginInventoryClient runtimeClient)
     {
         _paths = paths;
         _runtimeClient = runtimeClient;
+    }
+
+    public void UpdatePaths(LauncherPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        Volatile.Write(ref _paths, paths);
     }
 
     public async Task<IReadOnlyList<PluginInfo>> ScanAsync(CancellationToken cancellationToken)
@@ -162,7 +168,7 @@ public sealed class PluginInventoryService
             description,
             name,
             packagePath ?? string.Empty,
-            Classify(name, packagePath),
+            Classify(name, packagePath, _paths),
             _paths.ProfileName,
             ReadDisabled(configId),
             null,
@@ -201,13 +207,27 @@ public sealed class PluginInventoryService
         return match.Success ? match.Groups[1].Value.Trim('"', '\'') : name;
     }
 
-    private static PluginSourceKind Classify(string name, string? path)
+    private static PluginSourceKind Classify(string name, string? path, LauncherPaths paths)
     {
         if (name.StartsWith("@deepseek-ai/", StringComparison.OrdinalIgnoreCase))
             return PluginSourceKind.OfficialBundle;
-        if (path?.Contains(Path.Combine("F:", "dsp"), StringComparison.OrdinalIgnoreCase) == true)
+        if (!string.IsNullOrWhiteSpace(paths.PluginRoot)
+            && path is not null
+            && IsWithin(path, paths.PluginRoot))
             return PluginSourceKind.LocalPlugin;
         return path is null ? PluginSourceKind.Unknown : PluginSourceKind.ThirdParty;
+    }
+
+    private static bool IsWithin(string path, string parent)
+    {
+        var normalizedPath = Path.GetFullPath(path)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedParent = Path.GetFullPath(parent)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        return normalizedPath.StartsWith(normalizedParent, StringComparison.OrdinalIgnoreCase)
+               || string.Equals(normalizedPath, normalizedParent.TrimEnd(Path.DirectorySeparatorChar),
+                   StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool PackageNameEquals(string packageJson, string name)

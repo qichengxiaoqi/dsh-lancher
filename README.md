@@ -139,8 +139,8 @@ git branch -M main
 git remote add origin https://github.com/qichengxiaoqi/dsh-lancher.git
 git push -u origin main
 
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
 The release asset set is:

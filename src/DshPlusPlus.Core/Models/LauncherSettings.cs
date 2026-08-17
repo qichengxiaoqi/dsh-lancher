@@ -9,7 +9,7 @@ public sealed record ThemeSettings
     public int Density { get; init; } = 2;
     public int NavigationWidth { get; init; } = 224;
     public bool NavigationCollapsed { get; init; }
-    public bool AutoCollapseNavigation { get; init; } = true;
+    public bool AutoCollapseNavigation { get; init; }
 }
 
 public sealed record LauncherSettings
