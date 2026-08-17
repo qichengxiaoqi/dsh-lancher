@@ -162,7 +162,23 @@ jobs:
           test -x "$app_dir/Contents/MacOS/dsh++"
           plutil -lint "$app_dir/Contents/Info.plist"
           ls -la "$app_dir/Contents/MacOS"
-          hdiutil create -volname "dsh++" -srcfolder "$app_dir" -ov -format UDZO "$dmg"
+          sync
+          sleep 5
+          rm -f "$dmg"
+          for attempt in 1 2 3 4 5; do
+            echo "hdiutil create attempt $attempt"
+            if hdiutil create -volname "dsh++" -srcfolder "$app_dir" -ov -format UDZO "$dmg"; then
+              echo "DMG created successfully"
+              break
+            fi
+            hdiutil detach -force "/Volumes/dsh++" 2>/dev/null || true
+            rm -f "$dmg"
+            if [ "$attempt" = "5" ]; then
+              echo "hdiutil failed after 5 attempts"
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:
