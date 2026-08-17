@@ -1,0 +1,51 @@
+name: Build and Release dsh++
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore .\DshPlusPlus.sln -r win-x64
+
+      - name: Test
+        run: dotnet run --project .\tests\DshPlusPlus.Core.Tests\DshPlusPlus.Core.Tests.csproj --no-restore
+
+      - name: Publish win-x64 single file
+        run: >-
+          dotnet publish .\src\DshPlusPlus\DshPlusPlus.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          --no-restore
+          -o .\artifacts
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${{ github.ref_name }}"
+          .\artifacts\dsh++.exe
+          --repo "${{ github.repository }}"
+          --title "dsh++ ${{ github.ref_name }}"
+          --generate-notes

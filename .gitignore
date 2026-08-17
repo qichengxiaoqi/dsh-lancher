@@ -1,0 +1,35 @@
+# .NET build output
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+
+# Local build and release output
+/publish/
+/artifacts/
+**/publish/
+**/artifacts/
+
+# Local launcher state and secrets
+settings.json
+**/settings.json
+*.credentials.yaml
+*.credentials.yml
+*.credentials.json
+*.log
+*.tmp
+
+# IDE and OS files
+.idea/
+.vscode/*
+!.vscode/extensions.json
+Thumbs.db
+Desktop.ini
+
+# Test/runtime scratch directories
+.superpowers/brainstorm/ui-fixes/runtime/
+**/.dsh/
+**/sessions/
+**/plugins/
+**/.dsh++-update/
