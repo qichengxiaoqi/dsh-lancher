@@ -1,4 +1,4 @@
-# dsh++
+# dsh++——一个适配于 DeepSeek Harness 的轻量启动器工具
 
 [English](README.md) | 简体中文
 
@@ -141,7 +141,7 @@ tests/
   DshPlusPlus.Core.Tests/ 无第三方测试框架的可执行回归测试
 docs/
   configuration.md        自动探测和配置说明
-  superpowers/            设计与实施记录
+  releases/               GitHub Release 公开说明
 .github/workflows/
   release.yml             v* 标签 Release 工作流
 ```

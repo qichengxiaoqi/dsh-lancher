@@ -1,4 +1,4 @@
-# dsh++
+# dsh++ — A Lightweight Launcher for DeepSeek Harness
 
 English | [简体中文](README.zh-CN.md)
 
@@ -141,7 +141,7 @@ tests/
   DshPlusPlus.Core.Tests/ Executable regression tests without a third-party test framework
 docs/
   configuration.md        Automatic discovery and configuration notes
-  superpowers/            Design and implementation records
+  releases/               Public GitHub Release notes
 .github/workflows/
   release.yml             Release workflow for v* tags
 ```

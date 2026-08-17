@@ -39,13 +39,30 @@ jobs:
           --no-restore
           -o .\artifacts
 
+      - name: Create SHA-256 checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath .\artifacts\dsh++.exe).Hash.ToLowerInvariant()
+          "$hash  dsh++.exe" | Set-Content -LiteralPath .\artifacts\dsh++.exe.sha256 -Encoding ascii -NoNewline
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "${{ github.ref_name }}"
-          .\artifacts\dsh++.exe
-          --repo "${{ github.repository }}"
-          --title "dsh++ ${{ github.ref_name }}"
-          --generate-notes
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $notesFile = ".\docs\releases\$tag.md"
+          $releaseArgs = @(
+            "release", "create", $tag,
+            ".\artifacts\dsh++.exe",
+            ".\artifacts\dsh++.exe.sha256",
+            "--repo", "${{ github.repository }}",
+            "--title", "dsh++ $tag"
+          )
+          if (Test-Path -LiteralPath $notesFile) {
+            $releaseArgs += @("--notes-file", $notesFile)
+          } else {
+            $releaseArgs += "--generate-notes"
+          }
+          gh @releaseArgs
