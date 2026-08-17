@@ -33,3 +33,9 @@ Desktop.ini
 **/sessions/
 **/plugins/
 **/.dsh++-update/
+
+# Local design notes and generated planning artifacts
+/DSH-Launcher-Handoff.md
+/2026-08-16-dsh-launcher-design.md
+/docs/2026-08-16-dsh-plus-plus-design.md
+/docs/superpowers/
