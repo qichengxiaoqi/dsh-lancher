@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DshPlusPlus.Avalonia.Views.MaintenanceView">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <Border Classes="card" Background="#121D2A">
+        <StackPanel>
+          <TextBlock Text="AUTO DISCOVERY" Classes="eyebrow" />
+          <TextBlock Text="The launcher searches environment variables, the app folder and standard DSH locations. Review before saving." Classes="muted" TextWrapping="Wrap" Margin="0,8,0,14" />
+          <WrapPanel>
+            <Button Classes="primary" Content="Detect now" Command="{Binding DetectCommand}" />
+            <Button Classes="ghost" Content="Validate" Command="{Binding ValidateCommand}" />
+            <Button Classes="ghost" Content="Save paths" Command="{Binding SaveCommand}" />
+          </WrapPanel>
+          <TextBlock Text="{Binding ValidationMessage}" Foreground="#39D9FF" TextWrapping="Wrap" Margin="0,6,0,0" />
+        </StackPanel>
+      </Border>
+      <Border Classes="card">
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="18" RowSpacing="12">
+          <TextBlock Text="DSH root" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Column="1" Text="{Binding DshRoot, Mode=TwoWay}" PlaceholderText="Detected repository root" />
+          <TextBlock Grid.Row="1" Text="DSH home" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DshHome, Mode=TwoWay}" PlaceholderText="~/.dsh" />
+          <TextBlock Grid.Row="2" Text="Profile" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ProfileDirectory, Mode=TwoWay}" PlaceholderText="Profile package.json directory" />
+          <TextBlock Grid.Row="3" Text="Plugin root" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding PluginRoot, Mode=TwoWay}" PlaceholderText="Optional local plugin root" />
+          <TextBlock Grid.Row="4" Text="Service script" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding ServiceScript, Mode=TwoWay}" PlaceholderText="Windows PowerShell script" />
+          <TextBlock Grid.Row="5" Text="Web URL" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding WebUrl, Mode=TwoWay}" />
+          <TextBlock Grid.Row="6" Text="Port" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding Port, Mode=TwoWay}" />
+        </Grid>
+      </Border>
+      <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

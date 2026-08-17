@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-`dsh++` is a lightweight Windows launcher and management console for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness). It brings service control, Git maintenance, API settings, system instructions, plugin inventory, and launcher customization into one responsive .NET 9 WinForms application.
+`dsh++` is a lightweight launcher and management console for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness). It keeps the existing .NET 9 WinForms edition for Windows and adds a cross-platform Avalonia edition that reuses the same `DshPlusPlus.Core` services.
 
 The repository contains the launcher only. It does not include DeepSeek Harness source code, user sessions, plugin folders, credentials, or API keys.
 
@@ -50,19 +50,33 @@ dotnet publish .\src\DshPlusPlus\DshPlusPlus.csproj `
 
 The published file is `publish\dsh++.exe`. The `publish/` directory is ignored by Git and is not included in commits.
 
+### Cross-platform Avalonia edition
+
+The Avalonia UI is a separate project and does not reference WinForms:
+
+```powershell
+dotnet run --project .\src\DshPlusPlus.Avalonia\DshPlusPlus.Avalonia.csproj
+dotnet publish .\src\DshPlusPlus.Avalonia\DshPlusPlus.Avalonia.csproj `
+  -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+```
+
+For macOS DMG and Linux `tar.gz` packages, use the GitHub Actions workflow. The hosted runners perform the platform-specific publish and packaging steps; a local Windows machine is not expected to build DMG files.
+
 ## Runtime requirements and tools
 
 ### Running a Release build
 
-- Windows 10 or Windows 11, x64.
-- The self-contained executable downloaded from GitHub Releases does not require a separate .NET installation.
+- WinForms: Windows 10 or Windows 11, x64 or ARM64.
+- Avalonia: Windows x64, macOS Intel/Apple Silicon, or Linux x64/ARM64.
+- The self-contained assets downloaded from GitHub Releases do not require a separate .NET installation.
 - A local DeepSeek Harness source tree, Profile, and plugin directory are required for DSH management features.
 - PowerShell 5.1 or PowerShell 7, Git, and pnpm must be available on `PATH` for service management, dependency installation, and build-related operations.
 - HTTPS access to the GitHub API and release assets is required for launcher self-update checks.
 
 ### Building from source
 
-Windows 10/11 x64, the .NET 9 SDK, and Git are required. The DSH source tree and pnpm are not included in this repository and must be installed separately. The project does not depend on a fixed drive letter or a fixed Windows user name.
+The .NET 9 SDK and Git are required. Use the .NET SDK supported by the selected target RID. The DSH source tree and pnpm are not included in this repository and must be installed separately. DMG creation additionally runs on a macOS GitHub Actions runner with `hdiutil`; Linux archives use the runner's `tar` tool. The project does not depend on a fixed drive letter or a fixed user name.
 
 ## Automatic path discovery
 
@@ -115,7 +129,7 @@ The update process does not start DSH and does not modify the source tree, `.dsh
 
 ## GitHub Releases
 
-`.github/workflows/release.yml` builds releases from `v*` tags. GitHub Actions runs the tests, builds a self-contained single-file executable on a Windows runner, and creates a Release:
+`.github/workflows/release.yml` builds releases from `v*` tags. GitHub Actions runs the regression suite, builds both UI editions, packages platform assets on the appropriate hosted runners, creates `SHA256SUMS.txt`, and creates a GitHub Release:
 
 ```powershell
 git init
@@ -125,9 +139,22 @@ git branch -M main
 git remote add origin https://github.com/qichengxiaoqi/dsh-lancher.git
 git push -u origin main
 
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
+
+The release asset set is:
+
+| Asset | UI / platform |
+| --- | --- |
+| `dsh++.exe` | Existing WinForms, Windows x64; kept for self-update compatibility |
+| `dsh++-win-arm64.exe` | Existing WinForms, Windows ARM64 |
+| `dsh++-avalonia-win-x64.exe` | Avalonia, Windows x64 |
+| `dsh++-mac-x64.dmg` | Avalonia, macOS Intel |
+| `dsh++-mac-arm64.dmg` | Avalonia, macOS Apple Silicon |
+| `dsh++-linux-x64.tar.gz` | Avalonia, Linux x64 |
+| `dsh++-linux-arm64.tar.gz` | Avalonia, Linux ARM64 |
+| `SHA256SUMS.txt` | SHA-256 checksums for all assets |
 
 Do not commit `publish/`, `bin/`, `obj/`, local settings, or credential files. Release artifacts are rebuilt by the workflow.
 
@@ -136,7 +163,8 @@ Do not commit `publish/`, `bin/`, `obj/`, local settings, or credential files. R
 ```text
 src/
   DshPlusPlus.Core/       Configuration, discovery, API, Git, service, and plugin services
-  DshPlusPlus/            .NET 9 WinForms user interface
+  DshPlusPlus/            .NET 9 WinForms user interface (preserved Windows edition)
+  DshPlusPlus.Avalonia/   .NET 9 cross-platform Avalonia user interface
 tests/
   DshPlusPlus.Core.Tests/ Executable regression tests without a third-party test framework
 docs/
@@ -148,4 +176,4 @@ docs/
 
 ## License
 
-This repository does not currently specify a license. Add a `LICENSE` file before public distribution according to your intended terms.
+Released under the MIT License. See [LICENSE](LICENSE).

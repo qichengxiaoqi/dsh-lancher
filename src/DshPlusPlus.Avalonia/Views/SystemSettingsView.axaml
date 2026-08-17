@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DshPlusPlus.Avalonia.Views.SystemSettingsView">
+  <Grid ColumnDefinitions="0.9*,1.1*" ColumnSpacing="16">
+    <Border Classes="card" Padding="12">
+      <Grid RowDefinitions="Auto,*">
+        <TextBlock Text="INSTRUCTION SCOPE" Classes="eyebrow" Margin="8,6,8,12" />
+        <ListBox Grid.Row="1" ItemsSource="{Binding Files}" SelectedItem="{Binding Selected, Mode=TwoWay}">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <Border Padding="8" Margin="0,2" Background="#0F1721" CornerRadius="8">
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                  <TextBlock Text="{Binding Path}" Foreground="#DCE9F5" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="1" Text="{Binding Scope}" Classes="muted" FontSize="10" />
+                  <TextBlock Grid.Row="1" Text="{Binding Kind}" Classes="muted" FontSize="11" />
+                  <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding IsActive}" Foreground="#39D9FF" FontSize="10" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+    </Border>
+    <Border Grid.Column="1" Classes="card" Padding="16">
+      <Grid RowDefinitions="Auto,*,Auto">
+        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+          <StackPanel>
+            <TextBlock Text="READ-ONLY PREVIEW" Classes="eyebrow" />
+            <TextBlock Text="{Binding Selected.Path}" Classes="muted" TextTrimming="CharacterEllipsis" Margin="0,5,0,0" />
+          </StackPanel>
+          <Button Grid.Column="1" Classes="ghost" Content="Open editor" Command="{Binding OpenSelectedCommand}" />
+        </Grid>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+          <TextBox Text="{Binding PreviewText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Background="#0A1017" FontFamily="Cascadia Mono,Consolas,monospace" />
+        </ScrollViewer>
+        <TextBlock Grid.Row="2" Text="AGENTS.md is treated as the primary DSH instruction; CLAUDE.md is shown as compatibility context." Classes="muted" TextWrapping="Wrap" Margin="0,12,0,0" />
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DshPlusPlus.Avalonia.Views.DeepSeekApiView">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <Border Classes="card" Background="#17162B" BorderBrush="#3C3670">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel>
+            <TextBlock Text="DEEPSEEK API" Classes="eyebrow" />
+            <TextBlock Text="{Binding CredentialStatus}" Foreground="#F4F8FC" TextWrapping="Wrap" Margin="0,8,0,3" />
+            <TextBlock Text="The key is read from ~/.dsh/.credentials.yaml; an environment variable takes precedence." Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <Button Classes="ghost" Content="GitHub" Command="{Binding GithubCommand}" />
+            <Button Classes="ghost" Content="Console" Command="{Binding ConsoleCommand}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+        <Border Classes="card">
+          <StackPanel>
+            <TextBlock Text="CREDENTIALS" Classes="eyebrow" />
+            <TextBox Text="{Binding ApiKeyInput, Mode=TwoWay}" PasswordChar="●" PlaceholderText="Paste a key to save or test" Margin="0,12,0,8" />
+            <WrapPanel>
+              <Button Classes="primary" Content="Save locally" Command="{Binding SaveKeyCommand}" />
+              <Button Classes="ghost" Content="Clear file key" Command="{Binding ClearKeyCommand}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+        <Border Grid.Column="1" Classes="card">
+          <StackPanel>
+            <TextBlock Text="CONNECTION" Classes="eyebrow" />
+            <TextBlock Text="{Binding ConnectionStatus}" Foreground="#F4F8FC" TextWrapping="Wrap" Margin="0,10,0,3" />
+            <TextBlock Text="Latency" Classes="muted" FontSize="11" />
+            <TextBlock Text="{Binding Latency}" Foreground="#39D9FF" FontSize="22" Margin="0,2,0,12" />
+            <WrapPanel>
+              <Button Classes="primary" Content="Test connection" Command="{Binding TestCommand}" />
+              <Button Classes="ghost" Content="Get balance" Command="{Binding BalanceCommand}" />
+            </WrapPanel>
+            <TextBlock Text="Balance: {Binding Balance}" Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+      </Grid>
+      <Border Classes="card">
+        <Grid RowDefinitions="Auto,*">
+          <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <TextBlock Text="AVAILABLE MODELS" Classes="eyebrow" />
+            <Button Grid.Column="1" Classes="ghost" Content="Load models" Command="{Binding LoadModelsCommand}" />
+          </Grid>
+          <ListBox Grid.Row="1" ItemsSource="{Binding Models}" MinHeight="120">
+            <ListBox.ItemTemplate>
+              <DataTemplate><TextBlock Text="{Binding}" Foreground="#DCE9F5" Margin="4,6" /></DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+      </Border>
+      <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

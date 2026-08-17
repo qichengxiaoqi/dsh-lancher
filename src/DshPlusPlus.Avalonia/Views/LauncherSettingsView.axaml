@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DshPlusPlus.Avalonia.Views.LauncherSettingsView">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <Border Classes="card" Background="#17162B" BorderBrush="#3C3670">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel>
+            <TextBlock Text="RESPONSIVE SHELL" Classes="eyebrow" />
+            <TextBlock Text="Adjust the compact icon navigation, font scale and refresh cadence for your screen." Foreground="#F4F8FC" TextWrapping="Wrap" Margin="0,8,0,0" />
+          </StackPanel>
+          <Button Grid.Column="1" Classes="ghost" Content="Check update" Command="{Binding CheckUpdateCommand}" />
+        </Grid>
+      </Border>
+      <Border Classes="card">
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="20" RowSpacing="12">
+          <TextBlock Text="Theme" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Column="1" Text="{Binding ThemeName, Mode=TwoWay}" PlaceholderText="Obsidian" />
+          <TextBlock Grid.Row="1" Text="Font scale" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding FontScale, Mode=TwoWay}" PlaceholderText="80–140" />
+          <TextBlock Grid.Row="2" Text="Refresh seconds" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding RefreshSeconds, Mode=TwoWay}" PlaceholderText="5–120" />
+          <TextBlock Grid.Row="3" Text="Update interval hours" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding UpdateIntervalHours, Mode=TwoWay}" PlaceholderText="6–168" />
+          <CheckBox Grid.Row="4" Grid.ColumnSpan="2" Content="Start with compact icon navigation" IsChecked="{Binding NavigationCollapsed, Mode=TwoWay}" />
+          <CheckBox Grid.Row="5" Grid.ColumnSpan="2" Content="Auto-collapse navigation on narrow windows" IsChecked="{Binding AutoCollapse, Mode=TwoWay}" />
+        </Grid>
+      </Border>
+      <Border Classes="card">
+        <StackPanel>
+          <CheckBox Content="Check GitHub Releases automatically" IsChecked="{Binding AutoUpdate, Mode=TwoWay}" />
+          <Button Classes="primary" Content="Save and apply" Command="{Binding SaveCommand}" HorizontalAlignment="Left" />
+          <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap" Margin="0,8,0,0" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

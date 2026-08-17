@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DshPlusPlus.Avalonia.Views.PluginSettingsView">
+  <Grid RowDefinitions="Auto,*" RowSpacing="12">
+    <Border Classes="card" Background="#10232C" BorderBrush="#1E5567" Padding="16">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel>
+          <TextBlock Text="PLUGIN INVENTORY" Classes="eyebrow" />
+          <TextBlock Text="{Binding Status}" Foreground="#F4F8FC" TextWrapping="Wrap" Margin="0,7,0,0" />
+        </StackPanel>
+        <Button Grid.Column="1" Classes="primary" Content="Refresh inventory" Command="{Binding RefreshCommand}" />
+      </Grid>
+    </Border>
+    <Border Grid.Row="1" Classes="card" Padding="10">
+      <ListBox ItemsSource="{Binding Plugins}">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <Border Padding="10" Margin="0,3" Background="#0F1721" CornerRadius="10">
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                <StackPanel>
+                  <TextBlock Text="{Binding Name}" Foreground="#F4F8FC" FontSize="15" />
+                  <TextBlock Text="{Binding ModuleName}" Classes="muted" FontSize="11" />
+                </StackPanel>
+                <Button Grid.Column="1" Classes="ghost" Content="Toggle" Command="{Binding ToggleCommand}" IsEnabled="{Binding CanToggle}" />
+                <TextBlock Grid.Row="1" Text="{Binding Source}" Classes="muted" TextTrimming="CharacterEllipsis" Margin="0,7,0,0" />
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="14" Margin="0,5,0,0">
+                  <TextBlock Text="Version: {Binding Version}" Classes="muted" FontSize="11" />
+                  <TextBlock Text="State: {Binding RuntimeState}" Foreground="#39D9FF" FontSize="11" />
+                  <TextBlock Text="{Binding Status}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+  </Grid>
+</UserControl>

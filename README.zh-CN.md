@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-`dsh++` 是面向 [DeepSeek Harness（DSH）](https://github.com/deepseek-ai/deepseek-harness) 的轻量级 Windows 启动器与管理控制台。它将服务控制、Git 维护、API 设置、系统指令、插件清单和启动器自定义整合到一个响应式的 .NET 9 WinForms 应用中。
+`dsh++` 是面向 [DeepSeek Harness（DSH）](https://github.com/deepseek-ai/deepseek-harness) 的轻量级启动器与管理控制台。项目保留现有的 .NET 9 WinForms Windows 版本，并新增复用同一 `DshPlusPlus.Core` 的跨平台 Avalonia 版本。
 
 本仓库只包含启动器，不包含 DeepSeek Harness 源码、用户会话、插件目录、凭据或 API Key。
 
@@ -50,19 +50,33 @@ dotnet publish .\src\DshPlusPlus\DshPlusPlus.csproj `
 
 发布文件为 `publish\dsh++.exe`。`publish/` 已加入 Git 忽略规则，不会进入提交记录。
 
+### 跨平台 Avalonia 版本
+
+Avalonia 界面是独立项目，不引用 WinForms：
+
+```powershell
+dotnet run --project .\src\DshPlusPlus.Avalonia\DshPlusPlus.Avalonia.csproj
+dotnet publish .\src\DshPlusPlus.Avalonia\DshPlusPlus.Avalonia.csproj `
+  -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+```
+
+macOS 的 DMG 和 Linux 的 `tar.gz` 由 GitHub Actions 对应系统 runner 打包；Windows 本机不需要、也不应承担多平台打包工作。
+
 ## 运行环境与所需工具
 
 ### 直接运行 Release
 
-- Windows 10 或 Windows 11，x64。
-- 从 GitHub Releases 下载的 self-contained 单文件不要求另外安装 .NET。
+- WinForms：Windows 10/11，x64 或 ARM64。
+- Avalonia：Windows x64、macOS Intel/Apple Silicon、Linux x64/ARM64。
+- 从 GitHub Releases 下载的 self-contained 文件不要求另外安装 .NET。
 - 使用 DSH 管理功能需要本机已有 DeepSeek Harness 源码、Profile 和插件目录。
 - 使用服务管理、依赖安装和构建相关功能，需要 PowerShell 5.1 或 PowerShell 7、Git 和 pnpm，并确保它们可以从 `PATH` 找到。
 - 使用启动器自动更新，需要能够通过 HTTPS 访问 GitHub API 和 Release 资产。
 
 ### 从源码构建
 
-需要 Windows 10/11 x64、.NET 9 SDK 和 Git。DSH 源码与 pnpm 不包含在本仓库中，需要另行安装；项目不依赖固定盘符或固定 Windows 用户名。
+需要 .NET 9 SDK 和 Git，并使用目标 RID 对应的 SDK 支持。DSH 源码与 pnpm 不包含在本仓库中，需要另行安装；DMG 由 GitHub Actions 的 macOS runner 使用 `hdiutil` 创建，Linux 压缩包使用 runner 的 `tar` 创建。项目不依赖固定盘符或固定用户信息。
 
 ## 自动路径探测
 
@@ -115,7 +129,7 @@ dotnet publish .\src\DshPlusPlus\DshPlusPlus.csproj `
 
 ## GitHub Release
 
-仓库包含 `.github/workflows/release.yml`。推送 `v*` 标签后，GitHub Actions 会在 Windows runner 上运行测试、构建 self-contained 单文件并创建 Release：
+仓库包含 `.github/workflows/release.yml`。推送 `v*` 标签后，GitHub Actions 会运行回归测试，分别在 Windows/macOS/Linux runner 上构建和打包两套 UI，生成 `SHA256SUMS.txt`，然后创建 Release：
 
 ```powershell
 git init
@@ -125,9 +139,22 @@ git branch -M main
 git remote add origin https://github.com/qichengxiaoqi/dsh-lancher.git
 git push -u origin main
 
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
+
+发布资产包括：
+
+| 资产 | UI / 平台 |
+| --- | --- |
+| `dsh++.exe` | 保留的 WinForms Windows x64 版本，兼容现有自更新 |
+| `dsh++-win-arm64.exe` | WinForms Windows ARM64 版本 |
+| `dsh++-avalonia-win-x64.exe` | Avalonia Windows x64 版本 |
+| `dsh++-mac-x64.dmg` | Avalonia macOS Intel 版本 |
+| `dsh++-mac-arm64.dmg` | Avalonia macOS Apple Silicon 版本 |
+| `dsh++-linux-x64.tar.gz` | Avalonia Linux x64 版本 |
+| `dsh++-linux-arm64.tar.gz` | Avalonia Linux ARM64 版本 |
+| `SHA256SUMS.txt` | 全部资产的 SHA-256 校验值 |
 
 不要手动提交 `publish/`、`bin/`、`obj/`、本地设置或凭据文件。Release 发布文件由工作流重新生成。
 
@@ -136,7 +163,8 @@ git push origin v0.1.0
 ```text
 src/
   DshPlusPlus.Core/       配置、自动探测、API、Git、服务和插件核心服务
-  DshPlusPlus/            .NET 9 WinForms 界面
+  DshPlusPlus/            保留的 .NET 9 WinForms Windows 界面
+  DshPlusPlus.Avalonia/   .NET 9 跨平台 Avalonia 界面
 tests/
   DshPlusPlus.Core.Tests/ 无第三方测试框架的可执行回归测试
 docs/
@@ -148,4 +176,4 @@ docs/
 
 ## 许可证
 
-当前仓库尚未指定许可证。公开发布前，请根据你的授权意图补充 `LICENSE` 文件。
+本项目采用 MIT License，详见 [LICENSE](LICENSE)。

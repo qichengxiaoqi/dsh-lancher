@@ -1,0 +1,55 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DshPlusPlus.Avalonia.Views.DshManagementView">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <Border Classes="card" Background="#10232C" BorderBrush="#1E5567">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel>
+            <TextBlock Text="SERVICE RUNTIME" Classes="eyebrow" />
+            <TextBlock Text="{Binding ServiceStatus}" Foreground="#F4F8FC" FontSize="18" Margin="0,8,0,3" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding PlatformNotice}" Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+            <TextBlock Text="WEB UI" Classes="muted" FontSize="10" HorizontalAlignment="Right" />
+            <TextBlock Text="{Binding WebUrl}" Foreground="#39D9FF" FontSize="13" Margin="0,5,0,0" />
+          </StackPanel>
+        </Grid>
+      </Border>
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+        <Border Classes="card">
+          <StackPanel>
+            <TextBlock Text="DSH PROCESS" Classes="eyebrow" />
+            <TextBlock Text="{Binding RootPath}" Classes="muted" TextWrapping="Wrap" Margin="0,8,0,14" />
+            <WrapPanel>
+              <Button Classes="primary" Content="Start" Command="{Binding StartCommand}" />
+              <Button Classes="ghost" Content="Stop" Command="{Binding StopCommand}" />
+              <Button Classes="ghost" Content="Restart" Command="{Binding RestartCommand}" />
+              <Button Classes="ghost" Content="Open Web UI" Command="{Binding OpenWebCommand}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+        <Border Grid.Column="1" Classes="card">
+          <StackPanel>
+            <TextBlock Text="GIT SAFETY" Classes="eyebrow" />
+            <TextBlock Text="{Binding GitStatus}" Foreground="#F4F8FC" TextWrapping="Wrap" Margin="0,8,0,14" />
+            <WrapPanel>
+              <Button Classes="primary" Content="Check updates" Command="{Binding CheckGitCommand}" />
+              <Button Classes="ghost" Content="Safe pull" Command="{Binding PullCommand}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </Grid>
+      <Border Classes="card">
+        <Grid RowDefinitions="Auto,*">
+          <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <TextBlock Text="ACTIVITY LOG" Classes="eyebrow" />
+            <TextBlock Grid.Column="1" Text="bounded to latest 80 lines" Classes="muted" FontSize="10" />
+          </Grid>
+          <TextBox Grid.Row="1" Text="{Binding LogText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="160" Background="#0A1017" />
+        </Grid>
+      </Border>
+      <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

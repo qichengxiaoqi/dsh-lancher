@@ -9,60 +9,220 @@ on:
 permissions:
   contents: write
 
-jobs:
-  build:
-    runs-on: windows-latest
+env:
+  DOTNET_VERSION: 9.0.x
+  AVALONIA_PROJECT: ./src/DshPlusPlus.Avalonia/DshPlusPlus.Avalonia.csproj
+  WINFORMS_PROJECT: ./src/DshPlusPlus/DshPlusPlus.csproj
 
+jobs:
+  test:
+    name: Test and build solution
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup .NET 9
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
-
-      - name: Restore
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore solution
         run: dotnet restore .\DshPlusPlus.sln -r win-x64
-
-      - name: Test
+      - name: Core regression tests
         run: dotnet run --project .\tests\DshPlusPlus.Core.Tests\DshPlusPlus.Core.Tests.csproj --no-restore
+      - name: Build WinForms and Avalonia
+        run: dotnet build .\DshPlusPlus.sln -c Release --no-restore
 
-      - name: Publish win-x64 single file
-        run: >-
-          dotnet publish .\src\DshPlusPlus\DshPlusPlus.csproj
-          -c Release
-          -r win-x64
-          --self-contained true
-          -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          --no-restore
-          -o .\artifacts
-
-      - name: Create SHA-256 checksum
+  publish-winforms:
+    name: WinForms ${{ matrix.rid }}
+    needs: test
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            asset: dsh++.exe
+          - rid: win-arm64
+            asset: dsh++-win-arm64.exe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore WinForms project
+        run: dotnet restore $env:WINFORMS_PROJECT -r ${{ matrix.rid }}
+      - name: Publish WinForms single file
         shell: pwsh
         run: |
-          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath .\artifacts\dsh++.exe).Hash.ToLowerInvariant()
-          "$hash  dsh++.exe" | Set-Content -LiteralPath .\artifacts\dsh++.exe.sha256 -Encoding ascii -NoNewline
+          $out = Join-Path $env:GITHUB_WORKSPACE "staging\winforms-${{ matrix.rid }}"
+          dotnet publish $env:WINFORMS_PROJECT -c Release -r ${{ matrix.rid }} --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --no-restore -o $out
+          $source = Join-Path $out "dsh++.exe"
+          $target = Join-Path $out "${{ matrix.asset }}"
+          if ($source -ne $target) { Move-Item -LiteralPath $source -Destination $target }
+      - name: Upload WinForms asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: winforms-${{ matrix.rid }}
+          path: staging/winforms-${{ matrix.rid }}/${{ matrix.asset }}
+          if-no-files-found: error
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+  publish-avalonia-windows:
+    name: Avalonia Windows x64
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore Avalonia project
+        run: dotnet restore $env:AVALONIA_PROJECT -r win-x64
+      - name: Publish Avalonia Windows single file
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE "staging\avalonia-win-x64"
+          dotnet publish $env:AVALONIA_PROJECT -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --no-restore -o $out
+          Move-Item -LiteralPath (Join-Path $out "dsh++-avalonia.exe") -Destination (Join-Path $out "dsh++-avalonia-win-x64.exe")
+      - name: Upload Avalonia Windows asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: avalonia-win-x64
+          path: staging/avalonia-win-x64/dsh++-avalonia-win-x64.exe
+          if-no-files-found: error
+
+  publish-macos:
+    name: Avalonia macOS ${{ matrix.arch }}
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            rid: osx-x64
+            runner: macos-13
+          - arch: arm64
+            rid: osx-arm64
+            runner: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore Avalonia project
+        run: dotnet restore "$AVALONIA_PROJECT" -r ${{ matrix.rid }}
+      - name: Publish and package DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_dir="$GITHUB_WORKSPACE/staging/publish-${{ matrix.arch }}"
+          app_dir="$GITHUB_WORKSPACE/staging/dsh++.app"
+          dmg="$GITHUB_WORKSPACE/staging/dsh++-mac-${{ matrix.arch }}.dmg"
+          dotnet publish "$AVALONIA_PROJECT" -c Release -r "${{ matrix.rid }}" --self-contained true \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --no-restore -o "$publish_dir"
+          mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
+          cp "$publish_dir/dsh++-avalonia" "$app_dir/Contents/MacOS/dsh++"
+          chmod +x "$app_dir/Contents/MacOS/dsh++"
+          cat > "$app_dir/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleDisplayName</key><string>dsh++</string>
+            <key>CFBundleExecutable</key><string>dsh++</string>
+            <key>CFBundleIdentifier</key><string>com.qichengxiaoqi.dshplusplus</string>
+            <key>CFBundleName</key><string>dsh++</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>0.2.0</string>
+            <key>CFBundleVersion</key><string>0.2.0</string>
+          </dict></plist>
+          PLIST
+          hdiutil create -volname "dsh++" -srcfolder "$app_dir" -ov -format UDZO "$dmg"
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.arch }}
+          path: staging/dsh++-mac-${{ matrix.arch }}.dmg
+          if-no-files-found: error
+
+  publish-linux:
+    name: Avalonia Linux ${{ matrix.arch }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            rid: linux-x64
+          - arch: arm64
+            rid: linux-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore Avalonia project
+        run: dotnet restore "$AVALONIA_PROJECT" -r ${{ matrix.rid }}
+      - name: Publish and package tar.gz
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/staging"
+          publish_dir="$root/publish-${{ matrix.arch }}"
+          bundle_dir="$root/dsh++-linux-${{ matrix.arch }}"
+          archive="$root/dsh++-linux-${{ matrix.arch }}.tar.gz"
+          dotnet publish "$AVALONIA_PROJECT" -c Release -r "${{ matrix.rid }}" --self-contained true \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --no-restore -o "$publish_dir"
+          mkdir -p "$bundle_dir"
+          cp "$publish_dir/dsh++-avalonia" "$bundle_dir/dsh++"
+          chmod +x "$bundle_dir/dsh++"
+          tar -C "$root" -czf "$archive" "dsh++-linux-${{ matrix.arch }}"
+      - name: Upload Linux archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: staging/dsh++-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, publish-winforms, publish-avalonia-windows, publish-macos, publish-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+      - name: Flatten artifacts and create checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-files
+          find release-assets -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.tar.gz' \) -exec cp {} release-files/ \;
+          (cd release-files && sha256sum * > SHA256SUMS.txt)
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: pwsh
+        shell: bash
         run: |
-          $tag = "${{ github.ref_name }}"
-          $notesFile = ".\docs\releases\$tag.md"
-          $releaseArgs = @(
-            "release", "create", $tag,
-            ".\artifacts\dsh++.exe",
-            ".\artifacts\dsh++.exe.sha256",
-            "--repo", "${{ github.repository }}",
-            "--title", "dsh++ $tag"
-          )
-          if (Test-Path -LiteralPath $notesFile) {
-            $releaseArgs += @("--notes-file", $notesFile)
-          } else {
-            $releaseArgs += "--generate-notes"
-          }
-          gh @releaseArgs
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          notes="docs/releases/${tag}.md"
+          if [[ -f "$notes" ]]; then
+            gh release create "$tag" release-files/* --repo "$GITHUB_REPOSITORY" --title "dsh++ $tag" --notes-file "$notes" --verify-tag
+          else
+            gh release create "$tag" release-files/* --repo "$GITHUB_REPOSITORY" --title "dsh++ $tag" --generate-notes --verify-tag
+          fi
