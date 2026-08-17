@@ -106,7 +106,7 @@ jobs:
         include:
           - arch: x64
             rid: osx-x64
-            runner: macos-15-intel
+            runner: macos-15
           - arch: arm64
             rid: osx-arm64
             runner: macos-15
