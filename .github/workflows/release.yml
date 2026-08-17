@@ -129,8 +129,10 @@ jobs:
           dotnet publish "$AVALONIA_PROJECT" -c Release -r "${{ matrix.rid }}" --self-contained true \
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --no-restore -o "$publish_dir"
           mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
-          cp "$publish_dir/dsh++-avalonia" "$app_dir/Contents/MacOS/dsh++"
+          cp -R "$publish_dir/." "$app_dir/Contents/MacOS/"
+          mv "$app_dir/Contents/MacOS/dsh++-avalonia" "$app_dir/Contents/MacOS/dsh++"
           chmod +x "$app_dir/Contents/MacOS/dsh++"
+          ls -la "$app_dir/Contents/MacOS"
           cat > "$app_dir/Contents/Info.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
