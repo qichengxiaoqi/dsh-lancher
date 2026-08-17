@@ -119,20 +119,26 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Restore Avalonia project
         run: dotnet restore "$AVALONIA_PROJECT" -r ${{ matrix.rid }}
-      - name: Publish and package DMG
+      - name: Publish Avalonia macOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_dir="$GITHUB_WORKSPACE/staging/publish-${{ matrix.arch }}"
+          dotnet publish "$AVALONIA_PROJECT" -c Release -r "${{ matrix.rid }}" --self-contained true \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --no-restore -o "$publish_dir"
+          test -f "$publish_dir/dsh++-avalonia"
+          ls -la "$publish_dir"
+
+      - name: Assemble macOS app bundle
         shell: bash
         run: |
           set -euo pipefail
           publish_dir="$GITHUB_WORKSPACE/staging/publish-${{ matrix.arch }}"
           app_dir="$GITHUB_WORKSPACE/staging/dsh++.app"
-          dmg="$GITHUB_WORKSPACE/staging/dsh++-mac-${{ matrix.arch }}.dmg"
-          dotnet publish "$AVALONIA_PROJECT" -c Release -r "${{ matrix.rid }}" --self-contained true \
-            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --no-restore -o "$publish_dir"
           mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
           cp -R "$publish_dir/." "$app_dir/Contents/MacOS/"
           mv "$app_dir/Contents/MacOS/dsh++-avalonia" "$app_dir/Contents/MacOS/dsh++"
           chmod +x "$app_dir/Contents/MacOS/dsh++"
-          ls -la "$app_dir/Contents/MacOS"
           cat > "$app_dir/Contents/Info.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -146,6 +152,16 @@ jobs:
             <key>CFBundleVersion</key><string>0.2.0</string>
           </dict></plist>
           PLIST
+
+      - name: Create DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_dir="$GITHUB_WORKSPACE/staging/dsh++.app"
+          dmg="$GITHUB_WORKSPACE/staging/dsh++-mac-${{ matrix.arch }}.dmg"
+          test -x "$app_dir/Contents/MacOS/dsh++"
+          plutil -lint "$app_dir/Contents/Info.plist"
+          ls -la "$app_dir/Contents/MacOS"
           hdiutil create -volname "dsh++" -srcfolder "$app_dir" -ov -format UDZO "$dmg"
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
