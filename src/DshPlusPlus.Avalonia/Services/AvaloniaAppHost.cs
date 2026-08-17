@@ -17,14 +17,15 @@ public sealed class AvaloniaAppHost : IDisposable
         Runner = new ProcessRunner();
         ServiceController = new DshServiceController(Runner, Paths);
         StatusProbe = new ServiceStatusProbe(Paths, _httpClient);
-        GitRepository = new GitRepositoryService(Paths, Runner);
+        GitRepository = new GitRepositoryService(Paths, Runner, Settings.DshUpdates);
         ProjectCommands = new ProjectCommandService(Paths, Runner);
         ServiceScriptBackup = new DshServiceScriptBackup(Paths.ServiceScript);
         UpdateCoordinator = new UpdateCoordinator(
             GitRepository,
             ProjectCommands,
             ServiceController,
-            ServiceScriptBackup);
+            ServiceScriptBackup,
+            Settings.DshUpdates);
         CredentialStore = new DshCredentialStore();
         ApiClient = new DeepSeekApiClient();
         RuntimeInventory = new RuntimePluginInventoryClient();

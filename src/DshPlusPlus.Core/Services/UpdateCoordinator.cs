@@ -8,17 +8,20 @@ public sealed class UpdateCoordinator
     private readonly IProjectCommandService _projectCommands;
     private readonly IDshServiceController _serviceController;
     private readonly IDshServiceScriptBackup? _serviceScriptBackup;
+    private readonly DshUpdateSettings _updateSettings;
 
     public UpdateCoordinator(
         IGitRepositoryService gitRepository,
         IProjectCommandService projectCommands,
         IDshServiceController serviceController,
-        IDshServiceScriptBackup? serviceScriptBackup = null)
+        IDshServiceScriptBackup? serviceScriptBackup = null,
+        DshUpdateSettings? updateSettings = null)
     {
         _gitRepository = gitRepository;
         _projectCommands = projectCommands;
         _serviceController = serviceController;
         _serviceScriptBackup = serviceScriptBackup;
+        _updateSettings = updateSettings ?? new DshUpdateSettings();
     }
 
     public string BackupPolicyDescription => _serviceScriptBackup?.PolicyDescription
@@ -67,10 +70,33 @@ public sealed class UpdateCoordinator
         if (!stop.Succeeded)
             return Failure(UpdateState.Error, "stop", "关闭服务失败", stop, snapshot);
 
-        var pull = await _gitRepository.PullFastForwardOnlyAsync(remoteRef, cancellationToken);
-        if (!pull.Succeeded)
+        var isPatchRebase = check.State == UpdateState.PatchRebaseAvailable;
+        var update = isPatchRebase
+            ? await _gitRepository.RebasePatchBranchAsync(
+                remoteRef,
+                _updateSettings.PatchBranchName,
+                cancellationToken)
+            : await _gitRepository.PullFastForwardOnlyAsync(remoteRef, cancellationToken);
+        if (!update.Succeeded)
+        {
+            if (isPatchRebase)
+            {
+                var abort = await _gitRepository.AbortRebaseAsync(cancellationToken);
+                var message = "本地 DSH 补丁 rebase 失败";
+                if (!abort.Succeeded)
+                    message += "；无法自动中止 rebase，请保留现场并手动处理";
+                return FailureWithRestore(
+                    UpdateState.Error,
+                    "rebase",
+                    message,
+                    update,
+                    snapshot,
+                    backup);
+            }
+
             return FailureWithRestore(
-                UpdateState.Error, "pull", "git pull --ff-only 失败", pull, snapshot, backup);
+                UpdateState.Error, "pull", "git pull --ff-only 失败", update, snapshot, backup);
+        }
 
         var install = await _projectCommands.InstallDependenciesAsync(cancellationToken);
         if (!install.Succeeded)

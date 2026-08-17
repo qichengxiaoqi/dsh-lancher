@@ -5,6 +5,6 @@ public sealed record UpdateCheckResult(
     string Message,
     RepositorySnapshot? Snapshot = null)
 {
-    public bool CanPull => State == UpdateState.UpdateAvailable
+    public bool CanPull => State is UpdateState.UpdateAvailable or UpdateState.PatchRebaseAvailable
                            && Snapshot is { IsDirty: false, ResolvedRemoteRef: not null };
 }

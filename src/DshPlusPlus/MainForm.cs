@@ -54,7 +54,8 @@ public sealed class MainForm : Form
         PluginInventoryService pluginInventory,
         ProfilePatchService patchService,
         LauncherPathDiscovery pathDiscovery,
-        LauncherUpdateService launcherUpdateService)
+        LauncherUpdateService launcherUpdateService,
+        DshPatchQueueService patchQueue)
     {
         _settings = settings;
         _settingsStore = settingsStore;
@@ -84,7 +85,8 @@ public sealed class MainForm : Form
             pluginInventory,
             patchService,
             pathDiscovery,
-            launcherUpdateService);
+            launcherUpdateService,
+            patchQueue);
         _deepSeekApiPage = _pages.Values.OfType<DeepSeekApiPage>().Single();
         _systemSettingsPage = _pages.Values.OfType<SystemSettingsPage>().Single();
         _pluginSettingsPage = _pages.Values.OfType<PluginSettingsPage>().Single();
@@ -258,10 +260,11 @@ public sealed class MainForm : Form
         PluginInventoryService pluginInventory,
         ProfilePatchService patchService,
         LauncherPathDiscovery pathDiscovery,
-        LauncherUpdateService launcherUpdateService)
+        LauncherUpdateService launcherUpdateService,
+        DshPatchQueueService patchQueue)
     {
         _pages["DSH 管理"] = new DshManagementPage(
-            dshPaths, serviceController, statusProbe, gitRepository, updateCoordinator, _theme);
+            dshPaths, serviceController, statusProbe, gitRepository, updateCoordinator, patchQueue, _theme);
         _pages["安装维护"] = new MaintenancePage(
             _settings,
             _settingsStore,
@@ -515,6 +518,7 @@ public sealed class MainForm : Form
 
     private async Task SaveSettingsAsync(LauncherSettings settings)
     {
+        var pageToRestore = ResolvePageAfterSettingsSave(_activePage, settings.StartPage);
         _settings = settings;
         _launcherSettingsPage?.UpdateSettings(settings);
         _deepSeekApiPage?.UpdateSettings(settings);
@@ -530,9 +534,12 @@ public sealed class MainForm : Form
             settings.Theme.NavigationCollapsed,
             settings.Theme.AutoCollapseNavigation,
             ClientSize.Width).IsCollapsed);
-        SelectPage(settings.StartPage);
+        SelectPage(pageToRestore);
         await Task.CompletedTask;
     }
+
+    private static string ResolvePageAfterSettingsSave(string activePage, string fallbackPage) =>
+        string.IsNullOrWhiteSpace(activePage) ? fallbackPage : activePage;
 
     private async Task StartAutomaticUpdateCheckAsync()
     {

@@ -6,6 +6,7 @@ public enum UpdateState
     Checking,
     Latest,
     UpdateAvailable,
+    PatchRebaseAvailable,
     LocalAhead,
     DirtyWorktree,
     CannotConnect,

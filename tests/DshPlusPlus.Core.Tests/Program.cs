@@ -1,3 +1,4 @@
+using DshPlusPlus;
 using DshPlusPlus.Core.Models;
 using DshPlusPlus.Core.Services;
 using DshPlusPlus.UI.Controls;
@@ -56,7 +57,30 @@ static class Program
                 "Segoe UI",
                 UiFontResolver.ChooseAvailableFamily(
                     ["Segoe UI"],
-                    "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Arial"));
+                "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Arial"));
+        });
+        Run("theme update skips equivalent settings", () =>
+        {
+            using var theme = new ThemeManager(new ThemeSettings());
+            theme.Update(new ThemeSettings());
+
+            var retiredFonts = (System.Collections.ICollection?)typeof(ThemeManager)
+                .GetField("_retiredFonts", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?.GetValue(theme);
+            Assert.Equal(0, retiredFonts?.Count ?? -1);
+        });
+        Run("settings save preserves the active page", () =>
+        {
+            var resolver = typeof(MainForm).GetMethod(
+                "ResolvePageAfterSettingsSave",
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            if (resolver is null)
+                throw new InvalidOperationException("settings save page resolver is missing");
+
+            var active = (string?)resolver.Invoke(null, ["active", "fallback"]);
+            var fallback = (string?)resolver.Invoke(null, [string.Empty, "fallback"]);
+            Assert.Equal("active", active);
+            Assert.Equal("fallback", fallback);
         });
         Run("safe height respects font scale and minimum", () =>
         {
@@ -81,6 +105,19 @@ static class Program
             Assert.Equal("abcd…", UiText.Truncate("abcdefgh", 5));
         });
 
+        Run("DSH update defaults keep patch data machine neutral", () =>
+        {
+            var settings = LauncherSettings.CreateDefault();
+            Assert.Equal("upstream", settings.DshUpdates.UpstreamRemoteName);
+            Assert.Equal("dsh++-patches", settings.DshUpdates.PatchBranchName);
+
+            var root = Path.Combine(Path.GetTempPath(), "dsh-update-layout-test");
+            var layout = DshUpdateLayout.CreateDefault(root);
+            Assert.Equal(Path.Combine(root, "patches", "dsh"), layout.PatchDirectory);
+            Assert.Equal(Path.Combine(root, "updates", "dsh"), layout.WorkspaceDirectory);
+            Assert.Equal(Path.Combine(root, "dsh-update-state.json"), layout.StateFile);
+        });
+
         Run("latest comparison", () =>
             Assert.Equal(UpdateState.Latest, UpdateDecision.Evaluate(0, 0, false)));
         Run("behind means update available", () =>
@@ -95,6 +132,10 @@ static class Program
             Assert.Equal(UpdateState.Latest, UpdateDecision.Evaluate(0, 0, false)));
         Run("dirty wins over local ahead", () =>
             Assert.Equal(UpdateState.DirtyWorktree, UpdateDecision.Evaluate(3, 1, true)));
+        Run("clean patch branch reports rebase available", () =>
+            Assert.Equal(UpdateState.PatchRebaseAvailable, UpdateDecision.Evaluate(3, 1, false, true)));
+        Run("dirty patch branch still blocks update", () =>
+            Assert.Equal(UpdateState.DirtyWorktree, UpdateDecision.Evaluate(3, 1, true, true)));
         Run("fallback to main", () =>
             Assert.Equal("origin/main", RemoteResolver.Resolve(null, "origin/main", "origin/master")));
         Run("fallback to master", () =>
@@ -678,6 +719,136 @@ static class Program
             }
         });
 
+        await RunAsync("tracked service script is protected while source changes block", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-change-kinds-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(root);
+            try
+            {
+                File.WriteAllText(Path.Combine(root, "package.json"), "{\"version\":\"0.1.0-test\"}");
+                var paths = PathsFor(root);
+                Directory.CreateDirectory(Path.GetDirectoryName(paths.ServiceScript)!);
+                File.WriteAllText(paths.ServiceScript, "initial service script");
+                var source = Path.Combine(root, "src", "index.ts");
+                Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+                File.WriteAllText(source, "initial source");
+
+                var runner = new ProcessRunner();
+                await RunGit(runner, root, ["init"]);
+                await RunGit(runner, root, ["-c", "user.name=dsh-test", "-c", "user.email=dsh-test@example.invalid", "add", "."]);
+                await RunGit(runner, root, ["-c", "user.name=dsh-test", "-c", "user.email=dsh-test@example.invalid", "commit", "-m", "initial"]);
+                File.WriteAllText(paths.ServiceScript, "custom service script");
+                File.WriteAllText(source, "local source fix");
+
+                var snapshot = await new GitRepositoryService(paths, runner)
+                    .ReadLocalSnapshotAsync(CancellationToken.None);
+                Assert.True(snapshot.IsDirty);
+                Assert.True(snapshot.ProtectedLocalChanges.Any(path => path.EndsWith("DeepSeekHarnessService.ps1", StringComparison.OrdinalIgnoreCase)));
+                Assert.True(snapshot.SourceChanges.Any(path => path.EndsWith("index.ts", StringComparison.OrdinalIgnoreCase)));
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
+        await RunAsync("tracked protected service script alone blocks update", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-tracked-script-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(root);
+            try
+            {
+                File.WriteAllText(Path.Combine(root, "package.json"), "{\"version\":\"0.1.0-test\"}");
+                var paths = PathsFor(root);
+                Directory.CreateDirectory(Path.GetDirectoryName(paths.ServiceScript)!);
+                File.WriteAllText(paths.ServiceScript, "initial service script");
+
+                var runner = new ProcessRunner();
+                await RunGit(runner, root, ["init"]);
+                await RunGit(runner, root, ["-c", "user.name=dsh-test", "-c", "user.email=dsh-test@example.invalid", "add", "."]);
+                await RunGit(runner, root, ["-c", "user.name=dsh-test", "-c", "user.email=dsh-test@example.invalid", "commit", "-m", "initial"]);
+                File.WriteAllText(paths.ServiceScript, "tracked custom service script");
+
+                var snapshot = await new GitRepositoryService(paths, runner)
+                    .ReadLocalSnapshotAsync(CancellationToken.None);
+                Assert.True(snapshot.IsDirty);
+                Assert.True(snapshot.TrackedProtectedChanges.Any(path => path.EndsWith("DeepSeekHarnessService.ps1", StringComparison.OrdinalIgnoreCase)));
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
+        Run("patch rebase check is pullable when clean", () =>
+        {
+            var snapshot = new RepositorySnapshot(
+                "root", "dsh++-patches", "head", "head", "0.1.0", "0.2.0",
+                "https://github.com/example/dsh.git", "upstream/main", "upstream/main",
+                3, 1, false)
+            {
+                IsPatchBranch = true
+            };
+            Assert.True(new UpdateCheckResult(UpdateState.PatchRebaseAvailable, "patches", snapshot).CanPull);
+        });
+
+        await RunAsync("patch queue inspection creates isolated storage", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-patch-queue-{Guid.NewGuid():N}");
+            var storage = Path.Combine(root, "launcher-data");
+            Directory.CreateDirectory(root);
+            try
+            {
+                var runner = new RecordingRunner();
+                var queue = new DshPatchQueueService(
+                    PathsFor(root),
+                    runner,
+                    new DshUpdateSettings(),
+                    DshUpdateLayout.CreateDefault(storage));
+                var snapshot = await queue.InspectAsync(CancellationToken.None);
+
+                Assert.Equal("dsh++-patches", snapshot.BranchName);
+                Assert.Equal(Path.Combine(storage, "patches", "dsh"), snapshot.StoragePath);
+                Assert.True(Directory.Exists(snapshot.StoragePath));
+                Assert.True(Directory.Exists(snapshot.WorkspacePath));
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
+        await RunAsync("patch compatibility manifest round trips", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-compatibility-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(root);
+            try
+            {
+                var queue = new DshPatchQueueService(
+                    PathsFor(root),
+                    new RecordingRunner(),
+                    new DshUpdateSettings(),
+                    DshUpdateLayout.CreateDefault(Path.Combine(root, "launcher-data")));
+                var manifest = new DshCompatibilityManifest(
+                    "upstream-sha",
+                    "0.2.1",
+                    "local-fixes",
+                    DateTimeOffset.Parse("2026-08-17T00:00:00Z"));
+
+                await queue.SaveCompatibilityAsync(manifest, CancellationToken.None);
+                var loaded = queue.LoadCompatibility()
+                             ?? throw new InvalidOperationException("compatibility manifest was not saved");
+                Assert.Equal(manifest.TestedUpstreamSha, loaded.TestedUpstreamSha);
+                Assert.Equal(manifest.TestedDshVersion, loaded.TestedDshVersion);
+                Assert.Equal(manifest.PatchSet, loaded.PatchSet);
+                Assert.Equal(manifest.VerifiedAtUtc, loaded.VerifiedAtUtc);
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
         await RunAsync("project commands preserve explicit pnpm store", async () =>
         {
             var paths = PathsFor(Environment.CurrentDirectory);
@@ -746,6 +917,45 @@ static class Program
             Assert.SequenceEqual(
                 ["check", "backup", "stop", "pull", "install", "build", "restore"],
                 calls);
+            Assert.False(backup.Deleted);
+        });
+
+        await RunAsync("DSH patch rebase succeeds and cleans backup", async () =>
+        {
+            var calls = new List<string>();
+            var backup = new RecordingBackup(calls);
+            var git = new RecordingGit(UpdateState.PatchRebaseAvailable, calls);
+            var result = await new UpdateCoordinator(
+                    git,
+                    new RecordingProject(false, calls),
+                    new RecordingService(calls),
+                    backup,
+                    new DshUpdateSettings())
+                .PullAsync(CancellationToken.None);
+            Assert.True(result.Succeeded);
+            Assert.SequenceEqual(
+                ["check", "backup", "stop", "rebase", "install", "build", "start", "delete-backup"],
+                calls);
+            Assert.Equal("origin/main", git.LastRebaseRef);
+        });
+
+        await RunAsync("DSH patch rebase conflict aborts and keeps backup", async () =>
+        {
+            var calls = new List<string>();
+            var backup = new RecordingBackup(calls);
+            var git = new RecordingGit(UpdateState.PatchRebaseAvailable, calls)
+            {
+                RebaseFails = true
+            };
+            var result = await new UpdateCoordinator(
+                    git,
+                    new RecordingProject(false, calls),
+                    new RecordingService(calls),
+                    backup,
+                    new DshUpdateSettings())
+                .PullAsync(CancellationToken.None);
+            Assert.False(result.Succeeded);
+            Assert.SequenceEqual(["check", "backup", "stop", "rebase", "abort-rebase", "restore"], calls);
             Assert.False(backup.Deleted);
         });
 
@@ -985,6 +1195,9 @@ static class Program
             _calls = calls;
         }
 
+        public bool RebaseFails { get; init; }
+        public string? LastRebaseRef { get; private set; }
+
         public Task<RepositorySnapshot> ReadLocalSnapshotAsync(CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
@@ -1001,6 +1214,22 @@ static class Program
             _calls.Add("pull");
             LastPullRef = remoteRef;
             return Task.FromResult(Success("git"));
+        }
+
+        public Task<ProcessResult> RebasePatchBranchAsync(
+            string remoteRef,
+            string patchBranch,
+            CancellationToken cancellationToken)
+        {
+            _calls.Add("rebase");
+            LastRebaseRef = remoteRef;
+            return Task.FromResult(RebaseFails ? Failure("rebase") : Success("rebase"));
+        }
+
+        public Task<ProcessResult> AbortRebaseAsync(CancellationToken cancellationToken)
+        {
+            _calls.Add("abort-rebase");
+            return Task.FromResult(Success("rebase --abort"));
         }
     }
 

@@ -11,6 +11,11 @@ public interface IGitRepositoryService
     Task<ProcessResult> PullFastForwardOnlyAsync(
         string remoteRef,
         CancellationToken cancellationToken);
+    Task<ProcessResult> RebasePatchBranchAsync(
+        string remoteRef,
+        string patchBranch,
+        CancellationToken cancellationToken);
+    Task<ProcessResult> AbortRebaseAsync(CancellationToken cancellationToken);
 }
 
 public sealed class GitRepositoryService : IGitRepositoryService
@@ -26,11 +31,16 @@ public sealed class GitRepositoryService : IGitRepositoryService
 
     private readonly DshPaths _paths;
     private readonly IProcessRunner _processRunner;
+    private readonly DshUpdateSettings _updateSettings;
 
-    public GitRepositoryService(DshPaths paths, IProcessRunner processRunner)
+    public GitRepositoryService(
+        DshPaths paths,
+        IProcessRunner processRunner,
+        DshUpdateSettings? updateSettings = null)
     {
         _paths = paths;
         _processRunner = processRunner;
+        _updateSettings = updateSettings ?? new DshUpdateSettings();
     }
 
     public async Task<RepositorySnapshot> ReadLocalSnapshotAsync(CancellationToken cancellationToken)
@@ -44,7 +54,11 @@ public sealed class GitRepositoryService : IGitRepositoryService
         var branch = await RunRequiredAsync(["branch", "--show-current"], ReadTimeout, cancellationToken);
         var head = await RunRequiredAsync(["rev-parse", "HEAD"], ReadTimeout, cancellationToken);
         var shortHead = await RunRequiredAsync(["rev-parse", "--short", "HEAD"], ReadTimeout, cancellationToken);
-        var remote = await RunOptionalAsync(["remote", "get-url", "origin"], ReadTimeout, cancellationToken);
+        var remoteName = await ResolveRemoteNameAsync(cancellationToken);
+        var remote = await RunOptionalAsync(
+            ["remote", "get-url", remoteName],
+            ReadTimeout,
+            cancellationToken);
         var upstream = await RunOptionalAsync(
             ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
             ReadTimeout,
@@ -52,16 +66,30 @@ public sealed class GitRepositoryService : IGitRepositoryService
         var localVersion = await ReadPackageVersionAsync(_paths.PackageJsonPath, cancellationToken);
 
         var statusPaths = ParseStatusPaths(status.StandardOutput);
-        var localOnlyChanges = statusPaths
-            .Where(change => change.IsUntracked && IsKnownLocalFile(change.Path))
+        var protectedLocalChanges = statusPaths
+            .Where(change => IsKnownLocalFile(change.Path))
             .Select(change => change.Path)
             .ToArray();
-        var hasBlockingChanges = statusPaths.Any(change =>
-            !change.IsUntracked || !IsKnownLocalFile(change.Path));
+        var trackedProtectedChanges = statusPaths
+            .Where(change => !change.IsUntracked && IsKnownLocalFile(change.Path))
+            .Select(change => change.Path)
+            .ToArray();
+        var sourceChanges = statusPaths
+            .Where(change => !change.IsUntracked && !IsKnownLocalFile(change.Path))
+            .Select(change => change.Path)
+            .ToArray();
+        var unknownChanges = statusPaths
+            .Where(change => change.IsUntracked && !IsKnownLocalFile(change.Path))
+            .Select(change => change.Path)
+            .ToArray();
+        var hasBlockingChanges = trackedProtectedChanges.Length > 0
+                                  || sourceChanges.Length > 0
+                                  || unknownChanges.Length > 0;
+        var branchName = branch.StandardOutput.Trim();
 
         return new RepositorySnapshot(
             Root: _paths.Root,
-            Branch: branch.StandardOutput.Trim(),
+            Branch: branchName,
             HeadSha: head.StandardOutput.Trim(),
             ShortSha: shortHead.StandardOutput.Trim(),
             LocalPackageVersion: localVersion,
@@ -72,7 +100,18 @@ public sealed class GitRepositoryService : IGitRepositoryService
             Ahead: 0,
             Behind: 0,
             IsDirty: hasBlockingChanges,
-            localOnlyChanges: localOnlyChanges);
+            localOnlyChanges: protectedLocalChanges)
+        {
+            UpstreamRemoteName = remoteName,
+            IsPatchBranch = string.Equals(
+                branchName,
+                _updateSettings.PatchBranchName,
+                StringComparison.OrdinalIgnoreCase),
+            ProtectedLocalChanges = protectedLocalChanges,
+            TrackedProtectedChanges = trackedProtectedChanges,
+            SourceChanges = sourceChanges,
+            UnknownChanges = unknownChanges
+        };
     }
 
     public async Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken)
@@ -94,7 +133,9 @@ public sealed class GitRepositoryService : IGitRepositoryService
             }
 
             var fetch = await RunGitAsync(
-                ["fetch", "origin", "--prune"], FetchTimeout, cancellationToken);
+                ["fetch", local.UpstreamRemoteName, "--prune"],
+                FetchTimeout,
+                cancellationToken);
             if (!fetch.Succeeded)
             {
                 return new UpdateCheckResult(
@@ -103,7 +144,10 @@ public sealed class GitRepositoryService : IGitRepositoryService
                     local with { Error = Summarize(fetch) });
             }
 
-            var remoteRef = await ResolveRemoteRefAsync(local.UpstreamRef, cancellationToken);
+            var remoteRef = await ResolveRemoteRefAsync(
+                local.UpstreamRef,
+                local.UpstreamRemoteName,
+                cancellationToken);
             if (remoteRef is null)
             {
                 return new UpdateCheckResult(
@@ -129,7 +173,11 @@ public sealed class GitRepositoryService : IGitRepositoryService
                 Error = null
             };
 
-            var state = UpdateDecision.Evaluate(ahead, behind, local.IsDirty);
+            var state = UpdateDecision.Evaluate(
+                ahead,
+                behind,
+                local.IsDirty,
+                local.IsPatchBranch);
             return new UpdateCheckResult(
                 state,
                 BuildMessage(
@@ -171,11 +219,51 @@ public sealed class GitRepositoryService : IGitRepositoryService
             cancellationToken);
     }
 
-    private async Task<string?> ResolveRemoteRefAsync(
-        string? upstream,
+    public Task<ProcessResult> RebasePatchBranchAsync(
+        string remoteRef,
+        string patchBranch,
         CancellationToken cancellationToken)
     {
-        foreach (var candidate in new[] { upstream, "origin/main", "origin/master" })
+        if (!IsRemoteRef(remoteRef))
+            throw new ArgumentException("远程 ref 格式无效。", nameof(remoteRef));
+        if (!IsBranchName(patchBranch))
+            throw new ArgumentException("补丁分支名称无效。", nameof(patchBranch));
+
+        return RebasePatchBranchCoreAsync(remoteRef, patchBranch, cancellationToken);
+    }
+
+    public Task<ProcessResult> AbortRebaseAsync(CancellationToken cancellationToken) =>
+        RunGitAsync(["rebase", "--abort"], PullTimeout, cancellationToken);
+
+    private async Task<ProcessResult> RebasePatchBranchCoreAsync(
+        string remoteRef,
+        string patchBranch,
+        CancellationToken cancellationToken)
+    {
+        var switchResult = await RunGitAsync(
+            ["switch", patchBranch],
+            PullTimeout,
+            cancellationToken);
+        if (!switchResult.Succeeded)
+            return switchResult;
+
+        return await RunGitAsync(
+            ["rebase", "--rebase-merges", remoteRef],
+            PullTimeout,
+            cancellationToken);
+    }
+
+    private async Task<string?> ResolveRemoteRefAsync(
+        string? upstream,
+        string remoteName,
+        CancellationToken cancellationToken)
+    {
+        foreach (var candidate in new[]
+                 {
+                     $"{remoteName}/main",
+                     $"{remoteName}/master",
+                     upstream
+                 }.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (!IsRemoteRef(candidate))
                 continue;
@@ -189,6 +277,17 @@ public sealed class GitRepositoryService : IGitRepositoryService
         }
 
         return null;
+    }
+
+    private async Task<string> ResolveRemoteNameAsync(CancellationToken cancellationToken)
+    {
+        var configured = await RunOptionalAsync(
+            ["remote", "get-url", _updateSettings.UpstreamRemoteName],
+            ReadTimeout,
+            cancellationToken);
+        return configured is { StandardOutput.Length: > 0 }
+            ? _updateSettings.UpstreamRemoteName
+            : "origin";
     }
 
     private async Task<string?> ReadRemotePackageVersionAsync(
@@ -268,6 +367,14 @@ public sealed class GitRepositoryService : IGitRepositoryService
 
     private static bool IsRemoteRef(string? value) =>
         value is not null && RemoteRefRegex.IsMatch(value);
+
+    private static bool IsBranchName(string value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value.Length <= 200
+        && !value.StartsWith('-')
+        && !value.Contains("..", StringComparison.Ordinal)
+        && !value.Any(char.IsWhiteSpace)
+        && value.All(character => character is not '~' and not '^' and not ':' and not '?' and not '*' and not '[' and not '\\');
 
     private bool IsKnownLocalFile(string relativePath)
     {

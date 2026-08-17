@@ -51,14 +51,32 @@ public sealed class LauncherSettingsStore
 
     private LauncherSettings ApplyDiscovery(LauncherSettings settings)
     {
+        settings = Normalize(settings);
         if (!settings.AutoDetectPaths)
-            return settings with { SchemaVersion = Math.Max(3, settings.SchemaVersion) };
+            return settings with
+            {
+                SchemaVersion = Math.Max(LauncherSettings.CurrentSchemaVersion, settings.SchemaVersion)
+            };
 
         return settings with
         {
-            SchemaVersion = Math.Max(3, settings.SchemaVersion),
+            SchemaVersion = Math.Max(LauncherSettings.CurrentSchemaVersion, settings.SchemaVersion),
             Paths = _pathDiscovery.Discover()
         };
+    }
+
+    private static LauncherSettings Normalize(LauncherSettings settings)
+    {
+        var updates = settings.DshUpdates;
+        if (updates is null
+            || string.IsNullOrWhiteSpace(updates.UpstreamRemoteName)
+            || updates.UpstreamRemoteName.Any(char.IsWhiteSpace)
+            || !DshPatchQueueService.IsValidBranchName(updates.PatchBranchName))
+        {
+            updates = new DshUpdateSettings();
+        }
+
+        return settings with { DshUpdates = updates };
     }
 
     public async Task SaveAsync(LauncherSettings settings, CancellationToken cancellationToken)
