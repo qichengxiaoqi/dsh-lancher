@@ -22,6 +22,16 @@ public sealed class AvaloniaAppHost : IDisposable
         ApiClient = new DeepSeekApiClient();
         RuntimeInventory = new RuntimePluginInventoryClient();
         PluginInventory = new PluginInventoryService(Settings.Paths, RuntimeInventory);
+        SkillPathResolver = new SkillPathResolver();
+        SkillPaths = SkillPathResolver.Resolve(Settings.Paths, Settings.SkillImport);
+        SkillInventory = new SkillInventoryService(ToSkillImportSettings(SkillPaths));
+        SkillImporter = new SkillImportService(
+            SkillPaths,
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "dsh++",
+                "backups",
+                "skills"));
         InstructionScanner = new SystemInstructionScanner(Settings.Paths);
         PatchService = new ProfilePatchService();
         LauncherUpdateService = new LauncherUpdateService(_httpClient);
@@ -40,6 +50,10 @@ public sealed class AvaloniaAppHost : IDisposable
     public DeepSeekApiClient ApiClient { get; }
     public RuntimePluginInventoryClient RuntimeInventory { get; }
     public PluginInventoryService PluginInventory { get; }
+    public SkillPathResolver SkillPathResolver { get; }
+    public SkillPathSet SkillPaths { get; private set; }
+    public SkillInventoryService SkillInventory { get; }
+    public SkillImportService SkillImporter { get; }
     public SystemInstructionScanner InstructionScanner { get; }
     public ProfilePatchService PatchService { get; }
     public LauncherUpdateService LauncherUpdateService { get; }
@@ -50,7 +64,17 @@ public sealed class AvaloniaAppHost : IDisposable
         await SettingsStore.SaveAsync(settings, cancellationToken);
         Settings = settings;
         Paths = settings.Paths.ToDshPaths();
+        SkillPaths = SkillPathResolver.Resolve(settings.Paths, settings.SkillImport);
+        SkillInventory.UpdateSettings(ToSkillImportSettings(SkillPaths));
+        SkillImporter.UpdatePaths(SkillPaths);
     }
+
+    private static SkillImportSettings ToSkillImportSettings(SkillPathSet paths) => new()
+    {
+        CodexSkillsDirectory = paths.Codex,
+        ClaudeSkillsDirectory = paths.ClaudeCode,
+        DshSkillsDirectory = paths.DshTarget
+    };
 
     public void Dispose()
     {

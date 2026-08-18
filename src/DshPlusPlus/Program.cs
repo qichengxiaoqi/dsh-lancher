@@ -27,6 +27,16 @@ internal static class Program
         var apiClient = new DeepSeekApiClient();
         var runtimeInventory = new RuntimePluginInventoryClient();
         var pluginInventory = new PluginInventoryService(settings.Paths, runtimeInventory);
+        var skillPathResolver = new SkillPathResolver();
+        var skillPaths = skillPathResolver.Resolve(settings.Paths, settings.SkillImport);
+        var skillInventory = new SkillInventoryService(ToSkillImportSettings(skillPaths));
+        var skillImporter = new SkillImportService(
+            skillPaths,
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "dsh++",
+                "backups",
+                "skills"));
         var instructionScanner = new SystemInstructionScanner(settings.Paths);
         var patchService = new ProfilePatchService();
         using var updateHttpClient = new HttpClient();
@@ -46,10 +56,20 @@ internal static class Program
                 apiClient,
                 instructionScanner,
                 pluginInventory,
+                skillPaths,
+                skillInventory,
+                skillImporter,
                 patchService,
                 pathDiscovery,
                 launcherUpdateService,
                 patchQueue));
         }
     }
+
+    private static SkillImportSettings ToSkillImportSettings(SkillPathSet paths) => new()
+    {
+        CodexSkillsDirectory = paths.Codex,
+        ClaudeSkillsDirectory = paths.ClaudeCode,
+        DshSkillsDirectory = paths.DshTarget
+    };
 }

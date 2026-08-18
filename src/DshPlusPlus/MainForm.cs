@@ -23,6 +23,7 @@ public sealed class MainForm : Form
     private readonly CancellationTokenSource _lifetimeCts = new();
     private readonly NotifyIcon _notifyIcon = new();
     private readonly ContextMenuStrip _trayMenu = new();
+    private readonly SkillPathResolver _skillPathResolver = new();
     private StatusChip? _trayStatusChip;
     private DshManagementPage? _dshManagementPage;
     private DeepSeekApiPage? _deepSeekApiPage;
@@ -51,6 +52,9 @@ public sealed class MainForm : Form
         IDeepSeekApiClient apiClient,
         SystemInstructionScanner instructionScanner,
         PluginInventoryService pluginInventory,
+        SkillPathSet skillPaths,
+        SkillInventoryService skillInventory,
+        SkillImportService skillImporter,
         ProfilePatchService patchService,
         LauncherPathDiscovery pathDiscovery,
         LauncherUpdateService launcherUpdateService,
@@ -81,6 +85,9 @@ public sealed class MainForm : Form
             apiClient,
             instructionScanner,
             pluginInventory,
+            skillPaths,
+            skillInventory,
+            skillImporter,
             patchService,
             pathDiscovery,
             launcherUpdateService,
@@ -255,6 +262,9 @@ public sealed class MainForm : Form
         IDeepSeekApiClient apiClient,
         SystemInstructionScanner instructionScanner,
         PluginInventoryService pluginInventory,
+        SkillPathSet skillPaths,
+        SkillInventoryService skillInventory,
+        SkillImportService skillImporter,
         ProfilePatchService patchService,
         LauncherPathDiscovery pathDiscovery,
         LauncherUpdateService launcherUpdateService,
@@ -272,7 +282,15 @@ public sealed class MainForm : Form
         _pages["DeepSeek API"] = new DeepSeekApiPage(_settings, credentialStore, apiClient, _theme);
         _pages["系统级设置"] = new SystemSettingsPage(instructionScanner, _theme);
         _pages["插件设置"] = new PluginSettingsPage(
-            _settings.Paths, pluginInventory, patchService, serviceController, statusProbe, _theme);
+            _settings.Paths,
+            pluginInventory,
+            skillPaths,
+            skillInventory,
+            skillImporter,
+            patchService,
+            serviceController,
+            statusProbe,
+            _theme);
         _launcherSettingsPage = new LauncherSettingsPage(
             _settings,
             _settingsStore,
@@ -521,6 +539,8 @@ public sealed class MainForm : Form
         _deepSeekApiPage?.UpdateSettings(settings);
         _systemSettingsPage?.UpdatePaths(settings.Paths);
         _pluginSettingsPage?.UpdatePaths(settings.Paths);
+        _pluginSettingsPage?.UpdateSkillPaths(
+            _skillPathResolver.Resolve(settings.Paths, settings.SkillImport));
         _theme.Update(settings.Theme);
         foreach (var page in _pages.Values)
             page.ApplyCurrentTheme();

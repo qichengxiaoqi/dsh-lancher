@@ -76,7 +76,11 @@ public sealed class LauncherSettingsStore
             updates = new DshUpdateSettings();
         }
 
-        return settings with { DshUpdates = updates };
+        return settings with
+        {
+            DshUpdates = updates,
+            SkillImport = settings.SkillImport ?? new SkillImportSettings()
+        };
     }
 
     public async Task SaveAsync(LauncherSettings settings, CancellationToken cancellationToken)

@@ -9,7 +9,10 @@ namespace DshPlusPlus.UI.Pages;
 public sealed class PluginSettingsPage : PageBase
 {
     private LauncherPaths _paths;
+    private SkillPathSet _skillPaths;
     private readonly PluginInventoryService _inventory;
+    private readonly SkillInventoryService _skillInventory;
+    private readonly SkillImportService _skillImporter;
     private readonly ProfilePatchService _patchService;
     private readonly IDshServiceController _serviceController;
     private readonly ServiceStatusProbe _statusProbe;
@@ -21,6 +24,9 @@ public sealed class PluginSettingsPage : PageBase
     public PluginSettingsPage(
         LauncherPaths paths,
         PluginInventoryService inventory,
+        SkillPathSet skillPaths,
+        SkillInventoryService skillInventory,
+        SkillImportService skillImporter,
         ProfilePatchService patchService,
         IDshServiceController serviceController,
         ServiceStatusProbe statusProbe,
@@ -28,7 +34,10 @@ public sealed class PluginSettingsPage : PageBase
         : base(theme, "插件设置", "扫描 Profile、第三方插件和运行时 Loader 状态，并安全切换启用状态。")
     {
         _paths = paths;
+        _skillPaths = skillPaths;
         _inventory = inventory;
+        _skillInventory = skillInventory;
+        _skillImporter = skillImporter;
         _patchService = patchService;
         _serviceController = serviceController;
         _statusProbe = statusProbe;
@@ -43,6 +52,18 @@ public sealed class PluginSettingsPage : PageBase
     {
         _paths = paths;
         _inventory.UpdatePaths(paths);
+    }
+
+    public void UpdateSkillPaths(SkillPathSet paths)
+    {
+        _skillPaths = paths;
+        _skillInventory.UpdateSettings(new SkillImportSettings
+        {
+            CodexSkillsDirectory = paths.Codex,
+            ClaudeSkillsDirectory = paths.ClaudeCode,
+            DshSkillsDirectory = paths.DshTarget
+        });
+        _skillImporter.UpdatePaths(paths);
     }
 
     public override async Task RefreshAsync(CancellationToken cancellationToken)
