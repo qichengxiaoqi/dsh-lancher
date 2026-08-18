@@ -15,6 +15,7 @@ The repository contains the launcher only. It does not include DeepSeek Harness 
 - **DeepSeek API**: save the local API key securely, test connectivity, list models, and query the current balance. API keys are always masked in the UI.
 - **System settings**: scan DSH-scoped `AGENTS.md`, `CLAUDE.md`, `settings.yaml`, and patch files in read-only mode by default.
 - **Plugin settings**: inspect Profile manifests, plugin `package.json` files, local `file:` dependencies, and runtime plugin state; enable or disable plugins with backups.
+- **Skill import**: scan the local Codex and Claude Code skill directories, compare content with DSH, and manually import selected `SKILL.md` bundles or flat skills. Conflicts are backed up before replacement.
 - **Launcher settings**: customize theme, accent color, font scaling, collapsible navigation, refresh intervals, and the startup page.
 
 The interface includes Obsidian dark, light, and high-contrast themes, DPI-aware responsive layout, a collapsible icon navigation rail, and Windows tray notifications.
@@ -106,6 +107,16 @@ Optional environment variables:
 Launcher settings are stored at `%LOCALAPPDATA%\dsh++\settings.json`. `AutoDetectPaths` is enabled by default. Clicking **Validate and save** in **Installation and maintenance** creates a manual override; clicking **Detect and apply automatically** restores portable discovery.
 
 The default Web UI address is `http://127.0.0.1:3080`, which is the DSH runtime default and is not tied to a local file path.
+
+## Skill import
+
+Open **Plugin settings**, click **Scan skills**, select the rows to import, and click **Import selected**. The launcher automatically resolves:
+
+- `%USERPROFILE%\.codex\skills` or the `CODEX_HOME` override;
+- `%USERPROFILE%\.claude\skills` or the `CLAUDE_CONFIG_DIR` override;
+- `%USERPROFILE%\.dsh\skills` as the default DSH target.
+
+Only direct flat `*.md` skills and one-level directory bundles containing `SKILL.md` are considered. Invalid frontmatter, nested directories, and reparse points are ignored or marked unsupported. Identical content is skipped; a different target is copied only after a timestamped backup is created. The original Codex and Claude Code directories are never modified.
 
 ## Launcher self-update
 

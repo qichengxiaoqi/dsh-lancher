@@ -15,6 +15,7 @@
 - **DeepSeek API**：安全保存本地 API Key，检测连接，查看模型列表和当前余额；API Key 始终以掩码显示。
 - **系统级设置**：扫描 DSH 作用域内的 `AGENTS.md`、`CLAUDE.md`、`settings.yaml` 和 patch 文件，默认只读。
 - **插件设置**：读取 Profile 清单、插件 `package.json`、本地 `file:` 依赖和运行时插件状态，支持启用或禁用插件并生成备份。
+- **技能导入**：扫描本机 Codex 与 Claude Code 的技能目录，比较 DSH 目标内容，并手动勾选导入 `SKILL.md` 目录技能或平铺技能文件；发生冲突时先生成时间戳备份。
 - **启动器设置**：自定义主题、强调色、字体缩放、可收缩导航栏、刷新间隔和启动页。
 
 界面支持 Obsidian 深色主题、浅色主题、高对比度主题、DPI 感知的弹性布局、只显示图标的收缩导航栏以及 Windows 托盘通知。
@@ -106,6 +107,16 @@ macOS 的 DMG 和 Linux 的 `tar.gz` 由 GitHub Actions 对应系统 runner 打�
 启动器配置保存于 `%LOCALAPPDATA%\dsh++\settings.json`。默认启用 `AutoDetectPaths`。在“安装维护”中点击“验证并保存”会创建手动覆盖；点击“自动检测并应用”即可恢复跨机器自动探测。
 
 默认 Web UI 地址是 `http://127.0.0.1:3080`，这是 DSH 的运行时默认地址，不依赖某台电脑的文件路径。
+
+## 技能导入
+
+打开“插件设置”，点击“扫描技能”，勾选需要导入的条目，再点击“导入选中项”。启动器会自动探测：
+
+- `%USERPROFILE%\\.codex\\skills`，或 `CODEX_HOME` 指定的 Codex 目录；
+- `%USERPROFILE%\\.claude\\skills`，或 `CLAUDE_CONFIG_DIR` 指定的 Claude Code 目录；
+- `%USERPROFILE%\\.dsh\\skills` 作为 DSH 默认目标目录。
+
+只扫描直接位于技能根目录下的平铺 `*.md` 文件，以及包含 `SKILL.md` 的一级目录包。无效 frontmatter、嵌套技能目录和目录链接会被忽略或标记为不支持。同内容会跳过；目标内容不同则先创建带时间戳的备份，再执行替换。原始 Codex 与 Claude Code 目录不会被修改。
 
 ## 启动器自动更新
 
