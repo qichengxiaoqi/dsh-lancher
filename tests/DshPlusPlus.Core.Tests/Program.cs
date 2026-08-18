@@ -178,6 +178,45 @@ static class Program
             Assert.False(settings.Theme.AutoCollapseNavigation);
         });
 
+        await RunAsync("skill import settings round trip", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-skill-settings-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(root);
+            try
+            {
+                var settingsFile = Path.Combine(root, "settings.json");
+                var store = new LauncherSettingsStore(settingsFile, new LauncherPathDiscovery());
+                var settings = LauncherSettings.CreateDefault() with
+                {
+                    AutoDetectPaths = false,
+                    SkillImport = new SkillImportSettings
+                    {
+                        CodexSkillsDirectory = Path.Combine(root, "codex"),
+                        ClaudeSkillsDirectory = Path.Combine(root, "claude"),
+                        DshSkillsDirectory = Path.Combine(root, "dsh")
+                    }
+                };
+
+                await store.SaveAsync(settings, CancellationToken.None);
+                var loaded = new LauncherSettingsStore(settingsFile, new LauncherPathDiscovery()).Load();
+                Assert.Equal(LauncherSettings.CurrentSchemaVersion, loaded.SchemaVersion);
+                Assert.Equal(settings.SkillImport.DshSkillsDirectory, loaded.SkillImport.DshSkillsDirectory);
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
+        Run("skill models expose import states", () =>
+        {
+            var info = new SkillInfo(
+                "demo-skill", "Demo", SkillSourceKind.Codex,
+                "source", "target", true, "source-hash", null,
+                SkillImportState.New, null);
+            Assert.Equal(SkillImportState.New, info.State);
+        });
+
         await RunAsync("launcher update parses release and verifies asset", async () =>
         {
             var root = Path.Combine(Path.GetTempPath(), $"dsh-launcher-update-{Guid.NewGuid():N}");

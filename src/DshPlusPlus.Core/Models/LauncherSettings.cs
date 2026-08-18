@@ -12,15 +12,23 @@ public sealed record ThemeSettings
     public bool AutoCollapseNavigation { get; init; }
 }
 
+public sealed record SkillImportSettings
+{
+    public string CodexSkillsDirectory { get; init; } = string.Empty;
+    public string ClaudeSkillsDirectory { get; init; } = string.Empty;
+    public string DshSkillsDirectory { get; init; } = string.Empty;
+}
+
 public sealed record LauncherSettings
 {
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public bool AutoDetectPaths { get; init; } = true;
     public LauncherPaths Paths { get; init; } = LauncherPaths.CreateDefault();
     public DshUpdateSettings DshUpdates { get; init; } = new();
     public ThemeSettings Theme { get; init; } = new();
+    public SkillImportSettings SkillImport { get; init; } = new();
     public string StartPage { get; init; } = "DSH 管理";
     public int RefreshSeconds { get; init; } = 10;
     public bool ShowLogDrawer { get; init; } = true;
