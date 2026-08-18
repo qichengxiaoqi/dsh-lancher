@@ -1,4 +1,6 @@
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using DshPlusPlus.UI.Theme;
 
@@ -16,20 +18,24 @@ public static class TrayIconFactory
             _ => palette.Warning
         };
 
-        using var bitmap = new Bitmap(32, 32);
+        using var bitmap = new Bitmap(32, 32, PixelFormat.Format32bppArgb);
         using (var graphics = Graphics.FromImage(bitmap))
-        using (var background = new SolidBrush(palette.Background))
+        using (var source = LoadWhaleImage())
+        using (var halo = new SolidBrush(palette.Background))
         using (var accent = new SolidBrush(statusColor))
-        using (var highlight = new SolidBrush(palette.Text))
-        using (var outline = new Pen(statusColor, 2F))
-        using (var font = new Font("Segoe UI Semibold", 14F, FontStyle.Bold, GraphicsUnit.Pixel))
+        using (var outline = new Pen(palette.Text, 1.2F))
         {
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
             graphics.Clear(Color.Transparent);
-            graphics.FillEllipse(background, 1, 1, 30, 30);
-            graphics.DrawEllipse(outline, 2, 2, 28, 28);
-            graphics.FillEllipse(accent, 7, 7, 18, 18);
-            graphics.DrawString("d", font, highlight, 10, 6);
+            graphics.DrawImage(source, new Rectangle(0, 0, 32, 32));
+
+            // Keep the whale silhouette visible while making DSH connectivity
+            // unambiguous in the taskbar and notification area.
+            graphics.FillEllipse(halo, 22, 22, 9, 9);
+            graphics.DrawEllipse(outline, 22, 22, 9, 9);
+            graphics.FillEllipse(accent, 24, 24, 5, 5);
         }
 
         var handle = bitmap.GetHicon();
@@ -42,6 +48,20 @@ public static class TrayIconFactory
         {
             DestroyIcon(handle);
         }
+    }
+
+    private static Bitmap LoadWhaleImage()
+    {
+        var assembly = typeof(TrayIconFactory).Assembly;
+        var resourceName = assembly.GetManifestResourceNames()
+            .FirstOrDefault(name => name.EndsWith("Assets.dsh-whale.png", StringComparison.OrdinalIgnoreCase));
+        if (resourceName is null)
+            throw new InvalidOperationException("The dsh++ whale icon resource is missing.");
+
+        using var stream = assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException("The dsh++ whale icon resource cannot be opened.");
+        using var image = Image.FromStream(stream);
+        return new Bitmap(image);
     }
 
     [DllImport("user32.dll", SetLastError = true)]

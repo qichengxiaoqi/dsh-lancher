@@ -16,7 +16,7 @@ The repository contains the launcher only. It does not include DeepSeek Harness 
 - **System settings**: scan DSH-scoped `AGENTS.md`, `CLAUDE.md`, `settings.yaml`, and patch files in read-only mode by default.
 - **Plugin settings**: inspect Profile manifests, plugin `package.json` files, local `file:` dependencies, and runtime plugin state; enable or disable plugins with backups.
 - **Skill import**: scan the local Codex and Claude Code skill directories, compare content with DSH, and manually import selected `SKILL.md` bundles or flat skills. Conflicts are backed up before replacement.
-- **Launcher settings**: customize theme, accent color, font scaling, collapsible navigation, refresh intervals, and the startup page.
+- **Launcher settings**: customize theme, accent color, font scaling, navigation, refresh intervals, startup page, and whether closing the window moves dsh++ to the tray or exits.
 
 The interface includes Obsidian dark, light, and high-contrast themes, DPI-aware responsive layout, a collapsible icon navigation rail, and Windows tray notifications.
 

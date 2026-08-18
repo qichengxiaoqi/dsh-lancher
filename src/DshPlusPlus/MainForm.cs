@@ -306,7 +306,9 @@ public sealed class MainForm : Form
         _dshManagementPage = _pages.Values.OfType<DshManagementPage>().Single();
         _dshManagementPage.ServiceStateChanged += state =>
             UpdateTrayStatus(DescribeState(state), TrayStatusMapper.From(state, busy: false));
-        _notifyIcon.Icon = TrayIconFactory.Create(_theme.Palette, TrayStatusKind.Checking);
+        var launcherIcon = TrayIconFactory.Create(_theme.Palette, TrayStatusKind.Checking);
+        Icon = (Icon)launcherIcon.Clone();
+        _notifyIcon.Icon = launcherIcon;
         _notifyIcon.Text = "dsh++ · DeepSeek Harness";
         _notifyIcon.Visible = true;
         _notifyIcon.ContextMenuStrip = _trayMenu;
@@ -385,6 +387,11 @@ public sealed class MainForm : Form
     {
         if (_allowClose || e.CloseReason != CloseReason.UserClosing)
             return;
+        if (!_settings.CloseToTray)
+        {
+            _notifyIcon.Visible = false;
+            return;
+        }
         e.Cancel = true;
         HideToTray();
     }

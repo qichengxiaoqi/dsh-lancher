@@ -11,8 +11,10 @@
     <InformationalVersion>0.2.3</InformationalVersion>
     <AssemblyName>dsh++</AssemblyName>
     <RootNamespace>DshPlusPlus</RootNamespace>
+    <ApplicationIcon>Assets\dsh-whale.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\DshPlusPlus.Core\DshPlusPlus.Core.csproj" />
+    <EmbeddedResource Include="Assets\dsh-whale.png" />
   </ItemGroup>
 </Project>

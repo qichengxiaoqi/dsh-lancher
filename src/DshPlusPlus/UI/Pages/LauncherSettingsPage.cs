@@ -21,6 +21,7 @@ public sealed class LauncherSettingsPage : PageBase
     private readonly ComboBox _startPage = new();
     private readonly NumericUpDown _refreshSeconds = new();
     private readonly CheckBox _showLogs = new();
+    private readonly CheckBox _closeToTray = new();
     private readonly CheckBox _autoUpdate = new();
     private readonly NumericUpDown _updateIntervalHours = new();
     private readonly TextBox _upstreamRemote = new();
@@ -90,6 +91,7 @@ public sealed class LauncherSettingsPage : PageBase
         AddRow(table, "DSH 官方远程", _upstreamRemote);
         AddRow(table, "本地补丁分支", _patchBranch);
         AddRow(table, "DSH 更新隔离", MutedLabel("源码补丁与插件/配置分离；dsh++ Release 更新独立执行"));
+        AddRow(table, "Close behavior", _closeToTray);
         var updateActions = new FlowLayoutPanel
         {
             AutoSize = true,
@@ -160,6 +162,8 @@ public sealed class LauncherSettingsPage : PageBase
         _refreshSeconds.Value = Math.Clamp(_settings.RefreshSeconds, 5, 120);
         _showLogs.Text = "显示 DSH 管理日志";
         _showLogs.Checked = _settings.ShowLogDrawer;
+        _closeToTray.Text = "Minimize to tray when the window closes";
+        _closeToTray.Checked = _settings.CloseToTray;
         _autoUpdate.Text = "启动后低频检查 GitHub Release";
         _autoUpdate.Checked = _settings.AutoUpdateEnabled;
         _updateIntervalHours.Minimum = 6;
@@ -187,6 +191,7 @@ public sealed class LauncherSettingsPage : PageBase
             StartPage = _startPage.SelectedItem?.ToString() ?? "DSH 管理",
             RefreshSeconds = (int)_refreshSeconds.Value,
             ShowLogDrawer = _showLogs.Checked,
+            CloseToTray = _closeToTray.Checked,
             AutoUpdateEnabled = _autoUpdate.Checked,
             UpdateCheckIntervalHours = (int)_updateIntervalHours.Value,
             DshUpdates = _settings.DshUpdates with

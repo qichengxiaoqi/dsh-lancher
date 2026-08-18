@@ -21,7 +21,7 @@ public sealed record SkillImportSettings
 
 public sealed record LauncherSettings
 {
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 6;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public bool AutoDetectPaths { get; init; } = true;
@@ -32,6 +32,7 @@ public sealed record LauncherSettings
     public string StartPage { get; init; } = "DSH 管理";
     public int RefreshSeconds { get; init; } = 10;
     public bool ShowLogDrawer { get; init; } = true;
+    public bool CloseToTray { get; init; } = true;
     public bool AutoUpdateEnabled { get; init; } = true;
     public int UpdateCheckIntervalHours { get; init; } = 24;
     public DateTimeOffset? LastUpdateCheckUtc { get; init; }

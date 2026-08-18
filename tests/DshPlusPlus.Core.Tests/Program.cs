@@ -176,6 +176,25 @@ static class Program
             Assert.Equal("Obsidian", settings.Theme.Name);
             Assert.False(settings.Theme.NavigationCollapsed);
             Assert.False(settings.Theme.AutoCollapseNavigation);
+            Assert.True(settings.CloseToTray);
+        });
+
+        await RunAsync("close behavior setting round trip", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-close-setting-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(root);
+            try
+            {
+                var file = Path.Combine(root, "settings.json");
+                var store = new LauncherSettingsStore(file, new LauncherPathDiscovery());
+                await store.SaveAsync(LauncherSettings.CreateDefault() with { CloseToTray = false }, CancellationToken.None);
+                var loaded = new LauncherSettingsStore(file, new LauncherPathDiscovery()).Load();
+                Assert.False(loaded.CloseToTray);
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
         });
 
         await RunAsync("skill import settings round trip", async () =>
