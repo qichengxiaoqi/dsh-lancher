@@ -208,6 +208,25 @@ static class Program
             }
         });
 
+        await RunAsync("settings store restores missing skill import", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-skill-migration-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(root);
+            try
+            {
+                var settingsFile = Path.Combine(root, "settings.json");
+                File.WriteAllText(settingsFile, "{\"schemaVersion\":5,\"skillImport\":null}");
+                var loaded = new LauncherSettingsStore(settingsFile, new LauncherPathDiscovery()).Load();
+                var skillImport = loaded.SkillImport ?? throw new InvalidOperationException("skill import migration failed");
+                Assert.Equal(string.Empty, skillImport.CodexSkillsDirectory);
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+            await Task.CompletedTask;
+        });
+
         Run("skill models expose import states", () =>
         {
             var info = new SkillInfo(
