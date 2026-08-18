@@ -211,13 +211,11 @@ public sealed class DshManagementPageViewModel : PageViewModel
         StopCommand = new AsyncCommand(StopAsync, () => !_isBusy);
         RestartCommand = new AsyncCommand(RestartAsync, () => !_isBusy);
         CheckGitCommand = new AsyncCommand(CheckGitAsync, () => !_isBusy);
-        PullCommand = new AsyncCommand(PullAsync, () => !_isBusy);
         OpenWebCommand = new RelayCommand(() => OpenExternal(Host.Paths.WebUrl));
     }
 
     public string ServiceStatus { get => _serviceStatus; private set => SetProperty(ref _serviceStatus, value); }
     public string GitStatus { get => _gitStatus; private set => SetProperty(ref _gitStatus, value); }
-    public string UpdatePolicy => Host.UpdateCoordinator.BackupPolicyDescription;
     public string WebUrl => Host.Paths.WebUrl;
     public string RootPath => string.IsNullOrWhiteSpace(Host.Paths.Root) ? "DSH root not detected" : Host.Paths.Root;
     public string PlatformNotice => OperatingSystem.IsWindows()
@@ -228,7 +226,6 @@ public sealed class DshManagementPageViewModel : PageViewModel
     public ICommand StopCommand { get; }
     public ICommand RestartCommand { get; }
     public ICommand CheckGitCommand { get; }
-    public ICommand PullCommand { get; }
     public ICommand OpenWebCommand { get; }
 
     public override async Task RefreshAsync(CancellationToken cancellationToken)
@@ -287,38 +284,17 @@ public sealed class DshManagementPageViewModel : PageViewModel
         try
         {
             var result = await Host.GitRepository.CheckAsync(CancellationToken.None);
-            GitStatus = result.Message;
-            Status = "Git status refreshed";
+            GitStatus = result.HasUpdate
+                ? $"发现 DSH 上游更新（仅提醒）：{result.Message}"
+                : result.Message;
+            Status = result.HasUpdate ? "发现 DSH 上游更新（仅提醒）" : "Git status refreshed";
             AppendLog($"[{DateTime.Now:T}] DSH git: {result.Message}");
+            AppendLog("DSH 更新策略：仅检查和提醒，不拉取、不切换分支、不 rebase、不重启 DSH。");
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             GitStatus = exception.Message;
             Status = "Git check failed";
-        }
-        finally
-        {
-            _isBusy = false;
-        }
-    }
-
-    private async Task PullAsync()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            Status = "Automatic DSH update is currently Windows-only.";
-            return;
-        }
-        _isBusy = true;
-        try
-        {
-            var result = await Host.UpdateCoordinator.PullAsync(CancellationToken.None);
-            Status = result.Message;
-            AppendLog($"[{DateTime.Now:T}] DSH update: {result.Message}");
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            Status = exception.Message;
         }
         finally
         {

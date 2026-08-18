@@ -34,10 +34,9 @@
             <TextBlock Text="DSH REPOSITORY SAFETY" Classes="eyebrow" />
             <TextBlock Text="{Binding GitStatus}" Foreground="#F4F8FC" TextWrapping="Wrap" Margin="0,8,0,14" />
             <TextBlock Text="This checks the DSH source workspace only. dsh++ Release updates are under Launcher Settings." Classes="muted" TextWrapping="Wrap" Margin="0,0,0,14" />
-            <TextBlock Text="{Binding UpdatePolicy}" Classes="muted" TextWrapping="Wrap" Margin="0,0,0,14" />
+            <TextBlock Text="DSH 更新仅提供版本检查和提醒；不会自动拉取、切换分支、rebase、安装依赖或重启服务。dsh++ Release 更新仍在 Launcher Settings 中。" Classes="muted" TextWrapping="Wrap" Margin="0,0,0,14" />
             <WrapPanel>
               <Button Classes="primary" Content="Check DSH updates" Command="{Binding CheckGitCommand}" />
-              <Button Classes="ghost" Content="Pull DSH update" Command="{Binding PullCommand}" />
             </WrapPanel>
           </StackPanel>
         </Border>

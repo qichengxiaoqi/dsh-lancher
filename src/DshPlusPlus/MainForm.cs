@@ -47,7 +47,6 @@ public sealed class MainForm : Form
         IDshServiceController serviceController,
         ServiceStatusProbe statusProbe,
         IGitRepositoryService gitRepository,
-        UpdateCoordinator updateCoordinator,
         DshCredentialStore credentialStore,
         IDeepSeekApiClient apiClient,
         SystemInstructionScanner instructionScanner,
@@ -78,7 +77,6 @@ public sealed class MainForm : Form
             serviceController,
             statusProbe,
             gitRepository,
-            updateCoordinator,
             credentialStore,
             apiClient,
             instructionScanner,
@@ -253,7 +251,6 @@ public sealed class MainForm : Form
         IDshServiceController serviceController,
         ServiceStatusProbe statusProbe,
         IGitRepositoryService gitRepository,
-        UpdateCoordinator updateCoordinator,
         DshCredentialStore credentialStore,
         IDeepSeekApiClient apiClient,
         SystemInstructionScanner instructionScanner,
@@ -264,7 +261,7 @@ public sealed class MainForm : Form
         DshPatchQueueService patchQueue)
     {
         _pages["DSH 管理"] = new DshManagementPage(
-            dshPaths, serviceController, statusProbe, gitRepository, updateCoordinator, patchQueue, _theme);
+            dshPaths, serviceController, statusProbe, gitRepository, patchQueue, _theme);
         _pages["安装维护"] = new MaintenancePage(
             _settings,
             _settingsStore,

@@ -98,6 +98,16 @@ static class Program
             Assert.Equal("系统级设置", item.AccessibleName);
             Assert.Equal("04", item.Index);
         });
+        Run("DSH management omits redundant status cards", () =>
+        {
+            var fieldNames = typeof(DshPlusPlus.UI.Pages.DshManagementPage)
+                .GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                .Select(field => field.Name)
+                .ToArray();
+
+            Assert.False(fieldNames.Contains("_commitCard", StringComparer.Ordinal));
+            Assert.False(fieldNames.Contains("_remoteCard", StringComparer.Ordinal));
+        });
         Run("ui text truncation preserves short values", () =>
         {
             Assert.Equal(string.Empty, UiText.Truncate(null, 4));
@@ -122,7 +132,7 @@ static class Program
             Assert.Equal(UpdateState.Latest, UpdateDecision.Evaluate(0, 0, false)));
         Run("behind means update available", () =>
             Assert.Equal(UpdateState.UpdateAvailable, UpdateDecision.Evaluate(0, 2, false)));
-        Run("dirty worktree blocks pull", () =>
+        Run("dirty worktree is reported without update action", () =>
             Assert.Equal(UpdateState.DirtyWorktree, UpdateDecision.Evaluate(0, 2, true)));
         Run("upstream has priority", () =>
             Assert.Equal("origin/dev", RemoteResolver.Resolve("origin/dev", "origin/main", "origin/master")));
@@ -132,7 +142,7 @@ static class Program
             Assert.Equal(UpdateState.Latest, UpdateDecision.Evaluate(0, 0, false)));
         Run("dirty wins over local ahead", () =>
             Assert.Equal(UpdateState.DirtyWorktree, UpdateDecision.Evaluate(3, 1, true)));
-        Run("clean patch branch reports rebase available", () =>
+        Run("clean patch branch reports sync difference", () =>
             Assert.Equal(UpdateState.PatchRebaseAvailable, UpdateDecision.Evaluate(3, 1, false, true)));
         Run("dirty patch branch still blocks update", () =>
             Assert.Equal(UpdateState.DirtyWorktree, UpdateDecision.Evaluate(3, 1, true, true)));
@@ -780,7 +790,7 @@ static class Program
             }
         });
 
-        Run("patch rebase check is pullable when clean", () =>
+        Run("patch rebase check remains visible without pull access", () =>
         {
             var snapshot = new RepositorySnapshot(
                 "root", "dsh++-patches", "head", "head", "0.1.0", "0.2.0",
@@ -789,7 +799,21 @@ static class Program
             {
                 IsPatchBranch = true
             };
-            Assert.True(new UpdateCheckResult(UpdateState.PatchRebaseAvailable, "patches", snapshot).CanPull);
+            var result = new UpdateCheckResult(UpdateState.PatchRebaseAvailable, "patches", snapshot);
+            Assert.True(result.HasUpdate);
+            Assert.False(result.CanPull);
+        });
+
+        Run("DSH update check is notice-only", () =>
+        {
+            var snapshot = new RepositorySnapshot(
+                "root", "main", "head", "head", "0.1.0", "0.2.0",
+                "https://github.com/example/dsh.git", "origin/main", "origin/main",
+                0, 1, false);
+
+            var result = new UpdateCheckResult(UpdateState.UpdateAvailable, "update available", snapshot);
+            Assert.True(result.HasUpdate);
+            Assert.False(result.CanPull);
         });
 
         await RunAsync("patch queue inspection creates isolated storage", async () =>
@@ -874,127 +898,6 @@ static class Program
 
             Assert.SequenceEqual(["install"], runner.Last.Arguments);
             Assert.Equal(paths.Root, runner.Last.WorkingDirectory);
-        });
-
-        await RunAsync("git pull names resolved remote ref", async () =>
-        {
-            var paths = PathsFor(Environment.CurrentDirectory);
-            var runner = new RecordingRunner();
-            await new GitRepositoryService(paths, runner)
-                .PullFastForwardOnlyAsync("origin/main", CancellationToken.None);
-            Assert.SequenceEqual(
-                ["pull", "--ff-only", "origin", "main"],
-                runner.Last.Arguments);
-        });
-
-        await RunAsync("DSH update backs up before update and cleans after success", async () =>
-        {
-            var calls = new List<string>();
-            var backup = new RecordingBackup(calls);
-            var result = await new UpdateCoordinator(
-                    new RecordingGit(UpdateState.UpdateAvailable, calls),
-                    new RecordingProject(false, calls),
-                    new RecordingService(calls),
-                    backup)
-                .PullAsync(CancellationToken.None);
-            Assert.True(result.Succeeded);
-            Assert.SequenceEqual(
-                ["check", "backup", "stop", "pull", "install", "build", "start", "delete-backup"],
-                calls);
-        });
-
-        await RunAsync("DSH update failure restores and keeps backup", async () =>
-        {
-            var calls = new List<string>();
-            var backup = new RecordingBackup(calls);
-            var result = await new UpdateCoordinator(
-                    new RecordingGit(UpdateState.UpdateAvailable, calls),
-                    new RecordingProject(true, calls),
-                    new RecordingService(calls),
-                    backup)
-                .PullAsync(CancellationToken.None);
-            Assert.False(result.Succeeded);
-            Assert.SequenceEqual(
-                ["check", "backup", "stop", "pull", "install", "build", "restore"],
-                calls);
-            Assert.False(backup.Deleted);
-        });
-
-        await RunAsync("DSH patch rebase succeeds and cleans backup", async () =>
-        {
-            var calls = new List<string>();
-            var backup = new RecordingBackup(calls);
-            var git = new RecordingGit(UpdateState.PatchRebaseAvailable, calls);
-            var result = await new UpdateCoordinator(
-                    git,
-                    new RecordingProject(false, calls),
-                    new RecordingService(calls),
-                    backup,
-                    new DshUpdateSettings())
-                .PullAsync(CancellationToken.None);
-            Assert.True(result.Succeeded);
-            Assert.SequenceEqual(
-                ["check", "backup", "stop", "rebase", "install", "build", "start", "delete-backup"],
-                calls);
-            Assert.Equal("origin/main", git.LastRebaseRef);
-        });
-
-        await RunAsync("DSH patch rebase conflict aborts and keeps backup", async () =>
-        {
-            var calls = new List<string>();
-            var backup = new RecordingBackup(calls);
-            var git = new RecordingGit(UpdateState.PatchRebaseAvailable, calls)
-            {
-                RebaseFails = true
-            };
-            var result = await new UpdateCoordinator(
-                    git,
-                    new RecordingProject(false, calls),
-                    new RecordingService(calls),
-                    backup,
-                    new DshUpdateSettings())
-                .PullAsync(CancellationToken.None);
-            Assert.False(result.Succeeded);
-            Assert.SequenceEqual(["check", "backup", "stop", "rebase", "abort-rebase", "restore"], calls);
-            Assert.False(backup.Deleted);
-        });
-
-        await RunAsync("dirty worktree blocks pull before stop", async () =>
-        {
-            var calls = new List<string>();
-            var result = await new UpdateCoordinator(
-                    new RecordingGit(UpdateState.DirtyWorktree, calls),
-                    new RecordingProject(false, calls),
-                    new RecordingService(calls))
-                .PullAsync(CancellationToken.None);
-            Assert.Equal(UpdateState.DirtyWorktree, result.State);
-            Assert.SequenceEqual(["check"], calls);
-        });
-
-        await RunAsync("successful pull order", async () =>
-        {
-            var calls = new List<string>();
-            var git = new RecordingGit(UpdateState.UpdateAvailable, calls);
-            var result = await new UpdateCoordinator(
-                    git,
-                    new RecordingProject(false, calls),
-                    new RecordingService(calls))
-                .PullAsync(CancellationToken.None);
-            Assert.True(result.Succeeded);
-            Assert.SequenceEqual(["check", "stop", "pull", "install", "build", "start"], calls);
-            Assert.Equal("origin/main", git.LastPullRef);
-        });
-
-        await RunAsync("build failure does not restart or rollback", async () =>
-        {
-            var calls = new List<string>();
-            var result = await new UpdateCoordinator(
-                    new RecordingGit(UpdateState.UpdateAvailable, calls),
-                    new RecordingProject(true, calls),
-                    new RecordingService(calls))
-                .PullAsync(CancellationToken.None);
-            Assert.False(result.Succeeded);
-            Assert.SequenceEqual(["check", "stop", "pull", "install", "build"], calls);
         });
 
         return _failures == 0 ? 0 : 1;
@@ -1149,133 +1052,4 @@ static class Program
         Directory.Delete(root, recursive: true);
     }
 
-    private static ProcessResult Success(string name) =>
-        new(name, [], 0, string.Empty, string.Empty);
-
-    private static ProcessResult Failure(string name) =>
-        new(name, [], 1, string.Empty, "failed");
-
-    private sealed class RecordingBackup : IDshServiceScriptBackup
-    {
-        private readonly List<string> _calls;
-
-        public RecordingBackup(List<string> calls) => _calls = calls;
-
-        public bool Deleted { get; private set; }
-        public string PolicyDescription => "backup policy";
-
-        public DshServiceScriptBackupHandle? Prepare()
-        {
-            _calls.Add("backup");
-            return new("source", "backup", "backup-directory");
-        }
-
-        public void Restore(DshServiceScriptBackupHandle handle) => _calls.Add("restore");
-
-        public void Delete(DshServiceScriptBackupHandle handle)
-        {
-            _calls.Add("delete-backup");
-            Deleted = true;
-        }
-    }
-
-    private sealed class RecordingGit : IGitRepositoryService
-    {
-        private readonly UpdateCheckResult _check;
-        private readonly List<string> _calls;
-        public string? LastPullRef { get; private set; }
-
-        public RecordingGit(UpdateState state, List<string> calls)
-        {
-            var snapshot = new RepositorySnapshot(
-                "root", "main", "head", "head", "0.1.0", "0.2.0",
-                "https://github.com/example/dsh.git", "origin/main", "origin/main",
-                0, 1, state == UpdateState.DirtyWorktree);
-            _check = new UpdateCheckResult(state, state.ToString(), snapshot);
-            _calls = calls;
-        }
-
-        public bool RebaseFails { get; init; }
-        public string? LastRebaseRef { get; private set; }
-
-        public Task<RepositorySnapshot> ReadLocalSnapshotAsync(CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken)
-        {
-            _calls.Add("check");
-            return Task.FromResult(_check);
-        }
-
-        public Task<ProcessResult> PullFastForwardOnlyAsync(
-            string remoteRef,
-            CancellationToken cancellationToken)
-        {
-            _calls.Add("pull");
-            LastPullRef = remoteRef;
-            return Task.FromResult(Success("git"));
-        }
-
-        public Task<ProcessResult> RebasePatchBranchAsync(
-            string remoteRef,
-            string patchBranch,
-            CancellationToken cancellationToken)
-        {
-            _calls.Add("rebase");
-            LastRebaseRef = remoteRef;
-            return Task.FromResult(RebaseFails ? Failure("rebase") : Success("rebase"));
-        }
-
-        public Task<ProcessResult> AbortRebaseAsync(CancellationToken cancellationToken)
-        {
-            _calls.Add("abort-rebase");
-            return Task.FromResult(Success("rebase --abort"));
-        }
-    }
-
-    private sealed class RecordingProject : IProjectCommandService
-    {
-        private readonly bool _buildFails;
-        private readonly List<string> _calls;
-
-        public RecordingProject(bool buildFails, List<string> calls)
-        {
-            _buildFails = buildFails;
-            _calls = calls;
-        }
-
-        public Task<ProcessResult> InstallDependenciesAsync(CancellationToken cancellationToken)
-        {
-            _calls.Add("install");
-            return Task.FromResult(Success("pnpm"));
-        }
-
-        public Task<ProcessResult> BuildAsync(CancellationToken cancellationToken)
-        {
-            _calls.Add("build");
-            return Task.FromResult(_buildFails ? Failure("pnpm") : Success("pnpm"));
-        }
-    }
-
-    private sealed class RecordingService : IDshServiceController
-    {
-        private readonly List<string> _calls;
-
-        public RecordingService(List<string> calls) => _calls = calls;
-
-        public Task<ProcessResult> StartAsync(CancellationToken cancellationToken)
-        {
-            _calls.Add("start");
-            return Task.FromResult(Success("powershell"));
-        }
-
-        public Task<ProcessResult> StopAsync(CancellationToken cancellationToken)
-        {
-            _calls.Add("stop");
-            return Task.FromResult(Success("powershell"));
-        }
-
-        public Task<ProcessResult> RestartAsync(CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-    }
 }

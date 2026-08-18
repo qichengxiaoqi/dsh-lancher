@@ -8,14 +8,6 @@ public interface IGitRepositoryService
 {
     Task<RepositorySnapshot> ReadLocalSnapshotAsync(CancellationToken cancellationToken);
     Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken);
-    Task<ProcessResult> PullFastForwardOnlyAsync(
-        string remoteRef,
-        CancellationToken cancellationToken);
-    Task<ProcessResult> RebasePatchBranchAsync(
-        string remoteRef,
-        string patchBranch,
-        CancellationToken cancellationToken);
-    Task<ProcessResult> AbortRebaseAsync(CancellationToken cancellationToken);
 }
 
 public sealed class GitRepositoryService : IGitRepositoryService
@@ -23,7 +15,6 @@ public sealed class GitRepositoryService : IGitRepositoryService
     private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(120);
     private static readonly TimeSpan CompareTimeout = TimeSpan.FromSeconds(20);
-    private static readonly TimeSpan PullTimeout = TimeSpan.FromSeconds(120);
     private static readonly Regex RemoteRefRegex = new(
         "^[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled,
@@ -203,56 +194,6 @@ public sealed class GitRepositoryService : IGitRepositoryService
         }
     }
 
-    public Task<ProcessResult> PullFastForwardOnlyAsync(
-        string remoteRef,
-        CancellationToken cancellationToken)
-    {
-        if (!IsRemoteRef(remoteRef))
-            throw new ArgumentException("远程 ref 格式无效。", nameof(remoteRef));
-
-        var separator = remoteRef.IndexOf('/');
-        var remote = remoteRef[..separator];
-        var branch = remoteRef[(separator + 1)..];
-        return RunGitAsync(
-            ["pull", "--ff-only", remote, branch],
-            PullTimeout,
-            cancellationToken);
-    }
-
-    public Task<ProcessResult> RebasePatchBranchAsync(
-        string remoteRef,
-        string patchBranch,
-        CancellationToken cancellationToken)
-    {
-        if (!IsRemoteRef(remoteRef))
-            throw new ArgumentException("远程 ref 格式无效。", nameof(remoteRef));
-        if (!IsBranchName(patchBranch))
-            throw new ArgumentException("补丁分支名称无效。", nameof(patchBranch));
-
-        return RebasePatchBranchCoreAsync(remoteRef, patchBranch, cancellationToken);
-    }
-
-    public Task<ProcessResult> AbortRebaseAsync(CancellationToken cancellationToken) =>
-        RunGitAsync(["rebase", "--abort"], PullTimeout, cancellationToken);
-
-    private async Task<ProcessResult> RebasePatchBranchCoreAsync(
-        string remoteRef,
-        string patchBranch,
-        CancellationToken cancellationToken)
-    {
-        var switchResult = await RunGitAsync(
-            ["switch", patchBranch],
-            PullTimeout,
-            cancellationToken);
-        if (!switchResult.Succeeded)
-            return switchResult;
-
-        return await RunGitAsync(
-            ["rebase", "--rebase-merges", remoteRef],
-            PullTimeout,
-            cancellationToken);
-    }
-
     private async Task<string?> ResolveRemoteRefAsync(
         string? upstream,
         string remoteName,
@@ -368,14 +309,6 @@ public sealed class GitRepositoryService : IGitRepositoryService
     private static bool IsRemoteRef(string? value) =>
         value is not null && RemoteRefRegex.IsMatch(value);
 
-    private static bool IsBranchName(string value) =>
-        !string.IsNullOrWhiteSpace(value)
-        && value.Length <= 200
-        && !value.StartsWith('-')
-        && !value.Contains("..", StringComparison.Ordinal)
-        && !value.Any(char.IsWhiteSpace)
-        && value.All(character => character is not '~' and not '^' and not ':' and not '?' and not '*' and not '[' and not '\\');
-
     private bool IsKnownLocalFile(string relativePath)
     {
         var fullPath = Path.GetFullPath(Path.Combine(_paths.Root, relativePath));
@@ -405,10 +338,12 @@ public sealed class GitRepositoryService : IGitRepositoryService
         {
             UpdateState.Latest => $"已是最新（远程 {remoteShortSha}，版本 {remoteVersion ?? "未知"}）。",
             UpdateState.UpdateAvailable when localOnlyChanges.Count > 0 =>
-                $"发现 {behind} 个可用更新（远程 {remoteShortSha}，版本 {remoteVersion ?? "未知"}）；已识别 {localOnlyChanges.Count} 个本地脚本，更新时会保护。",
-            UpdateState.UpdateAvailable => $"发现 {behind} 个可用更新（远程 {remoteShortSha}，版本 {remoteVersion ?? "未知"}）。",
+                $"发现 {behind} 个可用更新（远程 {remoteShortSha}，版本 {remoteVersion ?? "未知"}）；已识别 {localOnlyChanges.Count} 个本地文件，仅提醒，不自动拉取或覆盖。",
+            UpdateState.UpdateAvailable => $"发现 {behind} 个可用更新（远程 {remoteShortSha}，版本 {remoteVersion ?? "未知"}）；仅提醒，不自动拉取。",
+            UpdateState.PatchRebaseAvailable =>
+                $"本地补丁分支与官方源码均有新提交（本地 {ahead}，官方 {behind}）；仅提醒，不自动切换或 rebase。",
             UpdateState.LocalAhead => $"本地领先远程 {ahead} 个提交；启动器不提供 push。",
-            UpdateState.DirtyWorktree => "工作区有未提交或未跟踪修改，禁止拉取更新。",
+            UpdateState.DirtyWorktree => "工作区有未提交或未跟踪修改；仅显示提醒，不执行拉取或重置。",
             _ => $"远程状态：{state}。"
         };
 
