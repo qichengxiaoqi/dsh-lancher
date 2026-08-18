@@ -5,7 +5,8 @@ namespace DshPlusPlus.Core.Services;
 public sealed record SkillPathSet(
     string Codex,
     string ClaudeCode,
-    string DshTarget);
+    string DshTarget,
+    string DshHome = "");
 
 public sealed class SkillPathResolver
 {
@@ -38,7 +39,8 @@ public sealed class SkillPathResolver
         return new(
             Normalize(codex),
             Normalize(claude),
-            Normalize(dsh));
+            Normalize(dsh),
+            Normalize(dshHome));
     }
 
     private static string Prefer(params string?[] candidates) =>

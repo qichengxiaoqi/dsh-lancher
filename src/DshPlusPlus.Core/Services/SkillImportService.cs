@@ -126,6 +126,8 @@ public sealed class SkillImportService
                 error = "来源路径不在已配置的技能目录内";
                 return false;
             }
+            if (!SkillMigrationSafety.ValidateTargetRoot(paths, out error))
+                return false;
             if (string.IsNullOrWhiteSpace(paths.DshTarget)
                 || !SkillContentHasher.IsWithin(skill.TargetPath, paths.DshTarget)
                 || string.Equals(Path.GetFullPath(skill.TargetPath), Path.GetFullPath(paths.DshTarget),
@@ -151,6 +153,14 @@ public sealed class SkillImportService
                 error = "来源不存在或是链接";
                 return false;
             }
+            if (!SkillMigrationSafety.ValidateBundle(
+                    skill.SourcePath,
+                    skill.IsDirectoryBundle,
+                    CancellationToken.None,
+                    out error))
+            {
+                return false;
+            }
             error = string.Empty;
             return true;
         }
@@ -162,6 +172,16 @@ public sealed class SkillImportService
         catch (NotSupportedException)
         {
             error = "来源或目标路径格式不受支持";
+            return false;
+        }
+        catch (IOException exception)
+        {
+            error = $"无法检查来源或目标路径：{exception.Message}";
+            return false;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            error = $"无法检查来源或目标路径：{exception.Message}";
             return false;
         }
     }

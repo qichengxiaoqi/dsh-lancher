@@ -16,10 +16,14 @@ public sealed class AvaloniaAppHost : IDisposable
         Paths = Settings.Paths.ToDshPaths();
         Runner = new ProcessRunner();
         StatusProbe = new ServiceStatusProbe(Paths, _httpClient);
+        SessionCompatibility = new SessionStorageCompatibilityService(Settings.Paths);
         ServiceController = new DshServiceController(
             Runner,
             Paths,
-            cancellationToken => StatusProbe.ProbeDshAsync(cancellationToken, forceRefresh: true));
+            cancellationToken => StatusProbe.ProbeDshAsync(cancellationToken, forceRefresh: true),
+            cancellationToken => SessionCompatibility.PrepareAsync(cancellationToken),
+            (cancellationToken, allowMixedQuarantine) =>
+                SessionCompatibility.PrepareAsync(cancellationToken, allowMixedQuarantine));
         GitRepository = new GitRepositoryService(Paths, Runner, Settings.DshUpdates);
         CredentialStore = new DshCredentialStore();
         ApiClient = new DeepSeekApiClient();
@@ -48,6 +52,7 @@ public sealed class AvaloniaAppHost : IDisposable
     public IProcessRunner Runner { get; }
     public IDshServiceController ServiceController { get; }
     public ServiceStatusProbe StatusProbe { get; }
+    public SessionStorageCompatibilityService SessionCompatibility { get; }
     public IGitRepositoryService GitRepository { get; }
     public DshCredentialStore CredentialStore { get; }
     public DeepSeekApiClient ApiClient { get; }

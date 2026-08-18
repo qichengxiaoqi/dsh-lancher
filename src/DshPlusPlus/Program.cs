@@ -20,10 +20,14 @@ internal static class Program
         var paths = settings.Paths.ToDshPaths();
         var runner = new ProcessRunner();
         var statusProbe = new ServiceStatusProbe(paths);
+        var sessionCompatibility = new SessionStorageCompatibilityService(settings.Paths);
         var serviceController = new DshServiceController(
             runner,
             paths,
-            cancellationToken => statusProbe.ProbeDshAsync(cancellationToken, forceRefresh: true));
+            cancellationToken => statusProbe.ProbeDshAsync(cancellationToken, forceRefresh: true),
+            cancellationToken => sessionCompatibility.PrepareAsync(cancellationToken),
+            (cancellationToken, allowMixedQuarantine) =>
+                sessionCompatibility.PrepareAsync(cancellationToken, allowMixedQuarantine));
         var gitRepository = new GitRepositoryService(paths, runner, settings.DshUpdates);
         var patchQueue = new DshPatchQueueService(paths, runner, settings.DshUpdates);
         var credentialStore = new DshCredentialStore();

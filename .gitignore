@@ -10,6 +10,7 @@
 /artifacts/
 **/publish/
 **/artifacts/
+**/publish-*/
 
 # Local launcher state and secrets
 settings.json

@@ -7,6 +7,9 @@ public interface IDshServiceController
     Task<ProcessResult> StartAsync(CancellationToken cancellationToken);
     Task<ProcessResult> StopAsync(CancellationToken cancellationToken);
     Task<ProcessResult> RestartAsync(CancellationToken cancellationToken);
+    Task<SessionStorageCompatibilityResult?> PrepareStartupAsync(
+        CancellationToken cancellationToken,
+        bool allowMixedQuarantine);
 }
 
 public sealed class DshServiceController : IDshServiceController
@@ -20,15 +23,21 @@ public sealed class DshServiceController : IDshServiceController
     private readonly IProcessRunner _processRunner;
     private readonly DshPaths _paths;
     private readonly Func<CancellationToken, Task<ServiceProbeResult>>? _readinessProbe;
+    private readonly Func<CancellationToken, Task<SessionStorageCompatibilityResult>>? _startupPreflight;
+    private readonly Func<CancellationToken, bool, Task<SessionStorageCompatibilityResult>>? _startupRepairPreflight;
 
     public DshServiceController(
         IProcessRunner processRunner,
         DshPaths paths,
-        Func<CancellationToken, Task<ServiceProbeResult>>? readinessProbe = null)
+        Func<CancellationToken, Task<ServiceProbeResult>>? readinessProbe = null,
+        Func<CancellationToken, Task<SessionStorageCompatibilityResult>>? startupPreflight = null,
+        Func<CancellationToken, bool, Task<SessionStorageCompatibilityResult>>? startupRepairPreflight = null)
     {
         _processRunner = processRunner;
         _paths = paths;
         _readinessProbe = readinessProbe;
+        _startupPreflight = startupPreflight;
+        _startupRepairPreflight = startupRepairPreflight;
     }
 
     public Task<ProcessResult> StartAsync(CancellationToken cancellationToken) =>
@@ -39,6 +48,24 @@ public sealed class DshServiceController : IDshServiceController
 
     public Task<ProcessResult> RestartAsync(CancellationToken cancellationToken) =>
         RunActionAsync("Restart", RestartTimeout, cancellationToken);
+
+    public Task<SessionStorageCompatibilityResult?> PrepareStartupAsync(
+        CancellationToken cancellationToken,
+        bool allowMixedQuarantine) =>
+        PrepareStartupCoreAsync(cancellationToken, allowMixedQuarantine);
+
+    private async Task<SessionStorageCompatibilityResult?> PrepareStartupCoreAsync(
+        CancellationToken cancellationToken,
+        bool allowMixedQuarantine)
+    {
+        if (_startupRepairPreflight is not null)
+            return await _startupRepairPreflight(cancellationToken, allowMixedQuarantine);
+
+        if (_startupPreflight is not null)
+            return await _startupPreflight(cancellationToken);
+
+        return null;
+    }
 
     private async Task<ProcessResult> RunActionAsync(
         string action,
@@ -58,12 +85,43 @@ public sealed class DshServiceController : IDshServiceController
             action
         ];
 
+        string? preflightMessage = null;
+        if (IsStartAction(action) && _startupPreflight is not null)
+        {
+            SessionStorageCompatibilityResult preflight;
+            try
+            {
+                preflight = await _startupPreflight(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                return PreflightFailure(arguments, $"DSH 启动前检查失败，已阻止启动：{exception.Message}");
+            }
+
+            if (!preflight.CanStart)
+                return PreflightFailure(arguments, preflight.Message);
+            if (preflight.Changed)
+                preflightMessage = preflight.Message;
+        }
+
         var result = await _processRunner.RunAsync(
             _paths.PowerShellPath,
             arguments,
-            _paths.Root,
+            ResolveWorkingDirectory(),
             timeout,
             cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(preflightMessage))
+        {
+            result = result with
+            {
+                StandardOutput = AppendDiagnostic(result.StandardOutput, preflightMessage)
+            };
+        }
 
         var readinessProbe = _readinessProbe;
         if (result.Canceled || !IsStartAction(action) || readinessProbe is null)
@@ -155,4 +213,25 @@ public sealed class DshServiceController : IDshServiceController
         string.IsNullOrWhiteSpace(existing)
             ? diagnostic
             : existing.TrimEnd() + Environment.NewLine + diagnostic;
+
+    private string ResolveWorkingDirectory()
+    {
+        if (!string.IsNullOrWhiteSpace(_paths.Root) && Directory.Exists(_paths.Root))
+            return _paths.Root;
+
+        var scriptDirectory = Path.GetDirectoryName(_paths.ServiceScript);
+        return string.IsNullOrWhiteSpace(scriptDirectory)
+            ? AppContext.BaseDirectory
+            : scriptDirectory;
+    }
+
+    private ProcessResult PreflightFailure(
+        IReadOnlyList<string> arguments,
+        string message) =>
+        new(
+            _paths.PowerShellPath,
+            arguments,
+            ExitCode: 2,
+            StandardOutput: string.Empty,
+            StandardError: message);
 }

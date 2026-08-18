@@ -8,8 +8,8 @@
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <AssemblyName>dsh++-avalonia</AssemblyName>
     <RootNamespace>DshPlusPlus.Avalonia</RootNamespace>
-    <Version>0.2.4</Version>
-    <InformationalVersion>0.2.4</InformationalVersion>
+    <Version>0.2.5</Version>
+    <InformationalVersion>0.2.5</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

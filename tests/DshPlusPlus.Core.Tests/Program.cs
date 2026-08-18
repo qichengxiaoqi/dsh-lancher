@@ -499,6 +499,69 @@ static class Program
             }
         });
 
+        await RunAsync("skill importer rejects the DSH home as a skill target", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-skill-import-home-{Guid.NewGuid():N}");
+            var sourceRoot = Path.Combine(root, "codex", "skills");
+            var dshHome = Path.Combine(root, "dsh");
+            var source = Path.Combine(sourceRoot, "demo-skill");
+            var target = Path.Combine(dshHome, "demo-skill");
+            Directory.CreateDirectory(source);
+            try
+            {
+                await File.WriteAllTextAsync(Path.Combine(source, "SKILL.md"), "valid");
+                var importer = new SkillImportService(
+                    new SkillPathSet(sourceRoot, sourceRoot, dshHome, dshHome),
+                    Path.Combine(root, "backups"));
+                var result = await importer.ImportAsync(
+                    new SkillInfo("demo-skill", "Demo", SkillSourceKind.Codex,
+                        source, target, true, string.Empty, null,
+                        SkillImportState.New, null),
+                    CancellationToken.None);
+
+                Assert.False(result.Succeeded);
+                Assert.Contains("技能目标", result.Message);
+                Assert.False(Directory.Exists(target));
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
+        await RunAsync("skill importer rejects session-shaped bundles", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-skill-import-session-{Guid.NewGuid():N}");
+            var sourceRoot = Path.Combine(root, "codex", "skills");
+            var targetRoot = Path.Combine(root, "dsh", "skills");
+            var source = Path.Combine(sourceRoot, "suspicious-skill");
+            var target = Path.Combine(targetRoot, "suspicious-skill");
+            Directory.CreateDirectory(Path.Combine(source, "sessions"));
+            try
+            {
+                await File.WriteAllTextAsync(Path.Combine(source, "SKILL.md"), "valid");
+                await File.WriteAllTextAsync(
+                    Path.Combine(source, "sessions", "session.jsonl"),
+                    "must not be imported");
+                var importer = new SkillImportService(
+                    new SkillPathSet(sourceRoot, sourceRoot, targetRoot, Path.Combine(root, "dsh")),
+                    Path.Combine(root, "backups"));
+                var result = await importer.ImportAsync(
+                    new SkillInfo("suspicious-skill", "Suspicious", SkillSourceKind.Codex,
+                        source, target, true, string.Empty, null,
+                        SkillImportState.New, null),
+                    CancellationToken.None);
+
+                Assert.False(result.Succeeded);
+                Assert.Contains("会话", result.Message);
+                Assert.False(Directory.Exists(target));
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
         await RunAsync("skill importer honors cancellation without leaving a stage", async () =>
         {
             var root = Path.Combine(Path.GetTempPath(), $"dsh-skill-import-cancel-{Guid.NewGuid():N}");
@@ -1005,6 +1068,68 @@ static class Program
             DeleteTree(root);
         });
 
+        await RunAsync("session compatibility blocks raw jsonl without changing files", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-session-compat-{Guid.NewGuid():N}");
+            var home = Path.Combine(root, "home");
+            var profile = Path.Combine(home, "profiles", "web");
+            var sessions = Path.Combine(home, "sessions", "project", "session-1");
+            Directory.CreateDirectory(profile);
+            Directory.CreateDirectory(sessions);
+            File.WriteAllText(Path.Combine(sessions, "session.jsonl"), "{}\n");
+            var patch = Path.Combine(profile, "cordis.patch.yml");
+            File.WriteAllText(patch, "# keep this comment\n- id: unrelated\n  name: other\n");
+
+            var result = await new SessionStorageCompatibilityService(
+                LauncherPaths.CreateDefault() with
+                {
+                    DshHome = home,
+                    ProfileDirectory = profile
+                }).PrepareAsync(CancellationToken.None);
+
+            var text = await File.ReadAllTextAsync(patch);
+            Assert.Equal(SessionStorageFormat.Jsonl, result.Format);
+            Assert.False(result.CanStart);
+            Assert.False(result.Changed);
+            Assert.Equal<string?>(null, result.BackupPath);
+            Assert.Contains("# keep this comment", text);
+            Assert.Contains("id: unrelated", text);
+            Assert.False(text.Contains("compression: none", StringComparison.OrdinalIgnoreCase));
+            DeleteTree(root);
+        });
+
+        await RunAsync("session compatibility never quarantines mixed encodings", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-session-mixed-{Guid.NewGuid():N}");
+            var home = Path.Combine(root, "home");
+            var profile = Path.Combine(home, "profiles", "web");
+            var sessions = Path.Combine(home, "sessions", "project", "session-1");
+            Directory.CreateDirectory(profile);
+            Directory.CreateDirectory(sessions);
+            File.WriteAllText(Path.Combine(sessions, "session.jsonl"), "{}\n");
+            File.WriteAllBytes(Path.Combine(sessions, "session.jsonl.zstd"), [1, 2, 3]);
+            var patch = Path.Combine(profile, "cordis.patch.yml");
+            var original = "- id: unrelated\n  name: other\n";
+            File.WriteAllText(patch, original);
+
+            var result = await new SessionStorageCompatibilityService(
+                LauncherPaths.CreateDefault() with
+                {
+                    DshHome = home,
+                    ProfileDirectory = profile
+                }).PrepareAsync(CancellationToken.None, allowMixedQuarantine: true);
+
+            Assert.Equal(SessionStorageFormat.Mixed, result.Format);
+            Assert.False(result.CanStart);
+            Assert.False(result.Changed);
+            Assert.Equal<string?>(null, result.BackupPath);
+            Assert.True(File.Exists(Path.Combine(sessions, "session.jsonl")));
+            Assert.True(File.Exists(Path.Combine(sessions, "session.jsonl.zstd")));
+            Assert.False(Directory.Exists(Path.Combine(home, "session-format-backups")));
+            Assert.Equal(original, await File.ReadAllTextAsync(patch));
+            DeleteTree(root);
+        });
+
         await RunAsync("process captures output", async () =>
         {
             var result = await new ProcessRunner().RunAsync(
@@ -1027,6 +1152,51 @@ static class Program
                 ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                     "-File", paths.ServiceScript, "-Action", "Start"],
                 runner.Last.Arguments);
+        });
+
+        await RunAsync("service controller runs startup preflight before start", async () =>
+        {
+            var paths = DshPaths.CreateDefault();
+            var runner = new RecordingRunner();
+            var preflightCalls = 0;
+            var controller = new DshServiceController(
+                runner,
+                paths,
+                startupPreflight: _ =>
+                {
+                    preflightCalls++;
+                    return Task.FromResult(new SessionStorageCompatibilityResult(
+                        SessionStorageFormat.Jsonl,
+                        CanStart: true,
+                        Changed: true,
+                        "session profile repaired"));
+                });
+
+            var result = await controller.StartAsync(CancellationToken.None);
+
+            Assert.Equal(1, preflightCalls);
+            Assert.True(result.Succeeded);
+            Assert.Contains("session profile repaired", result.CombinedOutput);
+        });
+
+        await RunAsync("service controller blocks start when startup preflight fails", async () =>
+        {
+            var paths = DshPaths.CreateDefault();
+            var runner = new RecordingRunner();
+            var controller = new DshServiceController(
+                runner,
+                paths,
+                startupPreflight: _ => Task.FromResult(new SessionStorageCompatibilityResult(
+                    SessionStorageFormat.Mixed,
+                    CanStart: false,
+                    Changed: false,
+                    "mixed session encodings")));
+
+            var result = await controller.StartAsync(CancellationToken.None);
+
+            Assert.False(result.Succeeded);
+            Assert.Contains("mixed session encodings", result.CombinedOutput);
+            Assert.Equal(0, runner.Calls.Count);
         });
 
         await RunAsync("service controller accepts a ready service after a launcher process failure", async () =>
