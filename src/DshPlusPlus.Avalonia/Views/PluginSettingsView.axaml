@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DshPlusPlus.Avalonia.Views.PluginSettingsView">
-  <Grid RowDefinitions="Auto,*" RowSpacing="12">
+  <Grid RowDefinitions="Auto,*,Auto,*" RowSpacing="12">
     <Border Classes="card" Background="#10232C" BorderBrush="#1E5567" Padding="16">
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel>
@@ -11,6 +11,7 @@
         <Button Grid.Column="1" Classes="primary" Content="Refresh inventory" Command="{Binding RefreshCommand}" />
       </Grid>
     </Border>
+
     <Border Grid.Row="1" Classes="card" Padding="10">
       <ListBox ItemsSource="{Binding Plugins}">
         <ListBox.ItemTemplate>
@@ -24,10 +25,49 @@
                 <Button Grid.Column="1" Classes="ghost" Content="Toggle" Command="{Binding ToggleCommand}" IsEnabled="{Binding CanToggle}" />
                 <TextBlock Grid.Row="1" Text="{Binding Source}" Classes="muted" TextTrimming="CharacterEllipsis" Margin="0,7,0,0" />
                 <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="14" Margin="0,5,0,0">
-                  <TextBlock Text="Version: {Binding Version}" Classes="muted" FontSize="11" />
-                  <TextBlock Text="State: {Binding RuntimeState}" Foreground="#39D9FF" FontSize="11" />
+                  <TextBlock Text="{Binding Version}" Classes="muted" FontSize="11" />
+                  <TextBlock Text="{Binding RuntimeState}" Foreground="#39D9FF" FontSize="11" />
                   <TextBlock Text="{Binding Status}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
                 </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+
+    <Border Grid.Row="2" Classes="card" Background="#10232C" BorderBrush="#1E5567" Padding="12">
+      <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+        <StackPanel>
+          <TextBlock Text="SKILL IMPORT" Classes="eyebrow" />
+          <TextBlock Text="Select skills from Codex or Claude Code; conflicts are backed up before replacement." Classes="muted" TextWrapping="Wrap" Margin="0,5,0,0" />
+        </StackPanel>
+        <Button Grid.Column="1" Classes="ghost" Content="Scan skills" Command="{Binding ScanSkillsCommand}" />
+        <Button Grid.Column="2" Classes="primary" Content="Import selected" Command="{Binding ImportSelectedSkillsCommand}" />
+        <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,8,0,0" Spacing="2">
+          <TextBlock Text="{Binding CodexSkillsPath}" Classes="muted" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding ClaudeSkillsPath}" Classes="muted" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="Target: {Binding DshSkillsPath}" Classes="muted" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="3" Classes="card" Padding="10">
+      <ListBox ItemsSource="{Binding Skills}">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <Border Padding="10" Margin="0,3" Background="#0F1721" CornerRadius="10">
+              <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="9" RowSpacing="3">
+                <CheckBox IsChecked="{Binding IsSelected}" IsEnabled="{Binding CanImport}" VerticalAlignment="Top" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="{Binding Name}" Foreground="#F4F8FC" FontSize="14" />
+                  <TextBlock Text="{Binding Description}" Classes="muted" TextWrapping="Wrap" FontSize="11" />
+                </StackPanel>
+                <TextBlock Grid.Column="2" Text="{Binding State}" Foreground="#39D9FF" FontSize="11" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Source}" Classes="muted" FontSize="11" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Target}" Classes="muted" TextTrimming="CharacterEllipsis" FontSize="11" />
+                <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Warning}" Classes="muted" TextWrapping="Wrap" FontSize="11" />
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="{Binding Status}" Foreground="#73E6A5" FontSize="10" />
               </Grid>
             </Border>
           </DataTemplate>

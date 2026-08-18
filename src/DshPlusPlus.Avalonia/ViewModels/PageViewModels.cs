@@ -631,17 +631,75 @@ public sealed class PluginRowViewModel : ObservableObject
     }
 }
 
+public sealed class SkillRowViewModel : ObservableObject
+{
+    private bool _isSelected;
+    private string _status;
+
+    public SkillRowViewModel(SkillInfo info)
+    {
+        Info = info;
+        _status = DescribeState(info.State);
+    }
+
+    public SkillInfo Info { get; private set; }
+    public string Name => Info.Name;
+    public string Description => Info.Description;
+    public string Source => Info.SourceKind.ToString();
+    public string Target => Info.TargetPath;
+    public string State => DescribeState(Info.State);
+    public string Warning => Info.Warning ?? string.Empty;
+    public bool CanImport => SkillImportService.IsSelectable(Info);
+    public bool IsSelected { get => _isSelected; set => SetProperty(ref _isSelected, value); }
+    public string Status { get => _status; set => SetProperty(ref _status, value); }
+
+    public void Update(SkillInfo info)
+    {
+        Info = info;
+        OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(Description));
+        OnPropertyChanged(nameof(Source));
+        OnPropertyChanged(nameof(Target));
+        OnPropertyChanged(nameof(State));
+        OnPropertyChanged(nameof(Warning));
+        OnPropertyChanged(nameof(CanImport));
+        Status = DescribeState(info.State);
+    }
+
+    private static string DescribeState(SkillImportState state) => state switch
+    {
+        SkillImportState.New => "New",
+        SkillImportState.SameContent => "Same content",
+        SkillImportState.Conflict => "Conflict (backup)",
+        SkillImportState.Invalid => "Invalid",
+        SkillImportState.Unsupported => "Unsupported",
+        _ => "Error"
+    };
+}
+
 public sealed class PluginSettingsPageViewModel : PageViewModel
 {
+    private bool _skillsLoaded;
     public PluginSettingsPageViewModel(AvaloniaAppHost host)
         : base(host, "插件设置", "PLUGINS / 05", "Inventory profile, local and runtime plugins. Toggle state writes a safe patch backup.")
     {
+        ScanSkillsCommand = new AsyncCommand(() => ScanSkillsAsync());
+        ImportSelectedSkillsCommand = new AsyncCommand(ImportSelectedSkillsAsync);
     }
 
     public ObservableCollection<PluginRowViewModel> Plugins { get; } = [];
+    public ObservableCollection<SkillRowViewModel> Skills { get; } = [];
+    public string CodexSkillsPath => Host.SkillPaths.Codex;
+    public string ClaudeSkillsPath => Host.SkillPaths.ClaudeCode;
+    public string DshSkillsPath => Host.SkillPaths.DshTarget;
+    public ICommand ScanSkillsCommand { get; }
+    public ICommand ImportSelectedSkillsCommand { get; }
 
     public override async Task RefreshAsync(CancellationToken cancellationToken)
     {
+        OnPropertyChanged(nameof(CodexSkillsPath));
+        OnPropertyChanged(nameof(ClaudeSkillsPath));
+        OnPropertyChanged(nameof(DshSkillsPath));
         var items = await Host.PluginInventory.ScanAsync(cancellationToken);
         foreach (var row in Plugins.ToArray())
             if (!items.Any(item => string.Equals(item.ModuleName, row.Info.ModuleName, StringComparison.OrdinalIgnoreCase))) Plugins.Remove(row);
@@ -650,7 +708,53 @@ public sealed class PluginSettingsPageViewModel : PageViewModel
             var row = Plugins.FirstOrDefault(existing => string.Equals(existing.Info.ModuleName, item.ModuleName, StringComparison.OrdinalIgnoreCase));
             if (row is null) Plugins.Add(new PluginRowViewModel(item, ToggleAsync)); else row.Update(item);
         }
-        Status = $"Found {Plugins.Count} plugins. Changes require a DSH restart.";
+        if (!_skillsLoaded)
+            await ScanSkillsAsync(cancellationToken);
+        Status = $"Found {Plugins.Count} plugins and {Skills.Count} skill records. Changes require a DSH restart.";
+    }
+
+    private async Task ScanSkillsAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var items = await Host.SkillInventory.ScanAsync(cancellationToken);
+            Skills.Clear();
+            foreach (var item in items)
+                Skills.Add(new SkillRowViewModel(item));
+            _skillsLoaded = true;
+            Status = $"Found {Skills.Count} skills. Select New or Conflict items to import.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            Status = "Skill scan canceled.";
+        }
+        catch (Exception exception)
+        {
+            Status = $"Skill scan failed: {DescribeException(exception)}";
+        }
+    }
+
+    private async Task ImportSelectedSkillsAsync()
+    {
+        var selected = Skills.Where(row => row.IsSelected && row.CanImport).ToArray();
+        if (selected.Length == 0)
+        {
+            Status = "Select at least one New or Conflict skill.";
+            return;
+        }
+
+        var succeeded = 0;
+        var failed = 0;
+        foreach (var row in selected)
+        {
+            var result = await Host.SkillImporter.ImportAsync(row.Info, CancellationToken.None);
+            row.Status = result.Message;
+            if (result.Succeeded) succeeded++; else failed++;
+        }
+
+        Status = $"Imported {succeeded}; failed {failed}. Conflicts use timestamped backups; restart DSH if needed.";
+        _skillsLoaded = false;
+        await ScanSkillsAsync();
     }
 
     private async Task ToggleAsync(PluginRowViewModel row)
