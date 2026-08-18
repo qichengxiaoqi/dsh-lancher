@@ -19,8 +19,11 @@ internal static class Program
         var settings = settingsStore.Load();
         var paths = settings.Paths.ToDshPaths();
         var runner = new ProcessRunner();
-        var serviceController = new DshServiceController(runner, paths);
         var statusProbe = new ServiceStatusProbe(paths);
+        var serviceController = new DshServiceController(
+            runner,
+            paths,
+            cancellationToken => statusProbe.ProbeDshAsync(cancellationToken, forceRefresh: true));
         var gitRepository = new GitRepositoryService(paths, runner, settings.DshUpdates);
         var patchQueue = new DshPatchQueueService(paths, runner, settings.DshUpdates);
         var credentialStore = new DshCredentialStore();

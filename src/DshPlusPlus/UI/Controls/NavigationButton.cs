@@ -64,9 +64,17 @@ public sealed class NavigationButton : Button
         SetStyle(ControlStyles.Selectable, false);
     }
 
-    public NavigationItem Item { get; }
+    public NavigationItem Item { get; private set; }
 
     public bool IsCollapsed { get; private set; }
+
+    public void UpdateTitle(string title)
+    {
+        Item = Item with { Title = title };
+        AccessibleName = Item.AccessibleName;
+        AccessibleDescription = $"{Item.Index} {Item.Title}";
+        Invalidate();
+    }
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool IsActive { get; set; }

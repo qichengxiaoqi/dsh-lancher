@@ -10,6 +10,7 @@ public sealed class PluginSettingsPage : PageBase
 {
     private LauncherPaths _paths;
     private SkillPathSet _skillPaths;
+    private LauncherText _text;
     private readonly PluginInventoryService _inventory;
     private readonly SkillInventoryService _skillInventory;
     private readonly SkillImportService _skillImporter;
@@ -24,6 +25,9 @@ public sealed class PluginSettingsPage : PageBase
     private readonly GlowButton _toggleButton;
     private readonly GlowButton _scanSkillsButton;
     private readonly GlowButton _importSkillsButton;
+    private Label? _skillCardTitle;
+    private Label? _pluginCardTitle;
+    private GlowButton? _refreshButton;
     private IReadOnlyList<PluginInfo> _plugins = [];
     private IReadOnlyList<SkillInfo> _skills = [];
     private bool _skillsLoaded;
@@ -37,24 +41,31 @@ public sealed class PluginSettingsPage : PageBase
         ProfilePatchService patchService,
         IDshServiceController serviceController,
         ServiceStatusProbe statusProbe,
-        ThemeManager theme)
-        : base(theme, "插件设置", "扫描 Profile、第三方插件和运行时 Loader 状态，并安全切换启用状态。")
+        ThemeManager theme,
+        LauncherText? text = null)
+        : base(
+            theme,
+            LauncherTextCatalog.Get(LauncherLanguage.System).PluginSettings,
+            LauncherTextCatalog.Get(LauncherLanguage.System).Pick(
+                "扫描 Profile、第三方插件和运行时 Loader 状态，并安全切换启用状态。",
+                "Scan the Profile, third-party plugins and runtime Loader state, then safely toggle plugins."))
     {
         _paths = paths;
         _skillPaths = skillPaths;
+        _text = text ?? LauncherTextCatalog.Get(LauncherLanguage.System);
         _inventory = inventory;
         _skillInventory = skillInventory;
         _skillImporter = skillImporter;
         _patchService = patchService;
         _serviceController = serviceController;
         _statusProbe = statusProbe;
-        _status = MutedLabel("尚未扫描");
-        _toggleButton = new GlowButton("启用/禁用", theme.Palette, primary: true) { Width = 110, Enabled = false };
-        _skillStatus = MutedLabel("Skills not scanned.");
+        _status = MutedLabel(_text.Pick("尚未扫描", "Not scanned"));
+        _toggleButton = new GlowButton(_text.Pick("启用/禁用", "Enable/disable"), theme.Palette, primary: true) { Width = 110, Enabled = false };
+        _skillStatus = MutedLabel(_text.SkillNotScanned);
         _skillPathLabel = MutedLabel(string.Empty);
         _skillPathLabel.Dock = DockStyle.Fill;
-        _scanSkillsButton = new GlowButton("Scan skills", theme.Palette);
-        _importSkillsButton = new GlowButton("Import selected", theme.Palette, primary: true) { Enabled = false };
+        _scanSkillsButton = new GlowButton(_text.SkillScan, theme.Palette);
+        _importSkillsButton = new GlowButton(_text.SkillImportSelected, theme.Palette, primary: true) { Enabled = false };
         Build();
     }
 
@@ -82,7 +93,7 @@ public sealed class PluginSettingsPage : PageBase
 
     public override async Task RefreshAsync(CancellationToken cancellationToken)
     {
-        _status.Text = "扫描中...";
+        _status.Text = _text.Pick("扫描中...", "Scanning...");
         _plugins = await _inventory.ScanAsync(cancellationToken);
         _grid.Rows.Clear();
         foreach (var plugin in _plugins)
@@ -91,12 +102,19 @@ public sealed class PluginSettingsPage : PageBase
             row.Tag = plugin;
             row.Cells[0].Value = plugin.Name;
             row.Cells[1].Value = string.IsNullOrWhiteSpace(plugin.Version) ? "运行时" : plugin.Version;
-            row.Cells[2].Value = plugin.Enabled switch { true => "已启用", false => "已禁用", _ => "未知" };
-            row.Cells[3].Value = plugin.FiberPhase ?? (plugin.RuntimeAvailable ? "未加载" : "未连接");
+            row.Cells[2].Value = plugin.Enabled switch
+            {
+                true => _text.Pick("已启用", "Enabled"),
+                false => _text.Pick("已禁用", "Disabled"),
+                _ => _text.Pick("未知", "Unknown")
+            };
+            row.Cells[3].Value = plugin.FiberPhase ?? (plugin.RuntimeAvailable ? _text.Pick("未加载", "Not loaded") : _text.Pick("未连接", "Disconnected"));
             row.Cells[4].Value = plugin.SourceKind.ToString();
             row.Cells[5].Value = plugin.SourcePath;
         }
-        _status.Text = $"已发现 {_plugins.Count} 个插件；当前 Profile：{_paths.ProfileName}";
+        _status.Text = _text.Pick(
+            $"已发现 {_plugins.Count} 个插件；当前 Profile：{_paths.ProfileName}",
+            $"Found {_plugins.Count} plugins. Current Profile: {_paths.ProfileName}");
         UpdateToggleState();
         if (!_skillsLoaded)
             await ScanSkillsAsync(cancellationToken);
@@ -138,18 +156,20 @@ public sealed class PluginSettingsPage : PageBase
         };
         _grid.SelectionChanged += (_, _) => UpdateToggleState();
         BuildSkillGrid();
-        layout.Controls.Add(Card(_grid, "已安装与运行时插件"), 0, 1);
+        var pluginCard = Card(_grid, _text.Pick("已安装与运行时插件", "Installed and runtime plugins"));
+        _pluginCardTitle = pluginCard.Controls.OfType<Label>().FirstOrDefault();
+        layout.Controls.Add(pluginCard, 0, 1);
 
         layout.Controls.Add(BuildSkillCard(), 0, 2);
 
         var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, Padding = new Padding(6, 5, 0, 0) };
         footer.Controls.Add(_status);
-        var refresh = new GlowButton("重新扫描", Theme.Palette);
-        refresh.Click += async (_, _) => await RefreshAsync(CancellationToken.None);
+        _refreshButton = new GlowButton(_text.Pick("重新扫描", "Rescan"), Theme.Palette);
+        _refreshButton.Click += async (_, _) => await RefreshAsync(CancellationToken.None);
         _toggleButton.Click += ToggleSelectedAsync;
         _scanSkillsButton.Click += async (_, _) => await ScanSkillsAsync(CancellationToken.None);
         _importSkillsButton.Click += ImportSelectedSkillsAsync;
-        footer.Controls.Add(refresh);
+        footer.Controls.Add(_refreshButton);
         footer.Controls.Add(_toggleButton);
         footer.Controls.Add(_skillStatus);
         footer.Controls.Add(_scanSkillsButton);
@@ -173,18 +193,18 @@ public sealed class PluginSettingsPage : PageBase
         _skillGrid.Columns.Add(new DataGridViewCheckBoxColumn
         {
             Name = "select",
-            HeaderText = "Import",
+            HeaderText = _text.SkillSelectColumn,
             AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
             Width = 60,
             ReadOnly = false,
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
-        _skillGrid.Columns.Add("name", "Name");
-        _skillGrid.Columns.Add("description", "Description");
-        _skillGrid.Columns.Add("source", "Source");
-        _skillGrid.Columns.Add("state", "State");
-        _skillGrid.Columns.Add("target", "Target");
-        _skillGrid.Columns.Add("warning", "Note");
+        _skillGrid.Columns.Add("name", _text.SkillNameColumn);
+        _skillGrid.Columns.Add("description", _text.SkillDescriptionColumn);
+        _skillGrid.Columns.Add("source", _text.SkillSourceColumn);
+        _skillGrid.Columns.Add("state", _text.SkillStateColumn);
+        _skillGrid.Columns.Add("target", _text.SkillTargetColumn);
+        _skillGrid.Columns.Add("warning", _text.SkillNoteColumn);
         foreach (DataGridViewColumn column in _skillGrid.Columns)
         {
             column.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
@@ -228,22 +248,27 @@ public sealed class PluginSettingsPage : PageBase
         content.Controls.Add(_skillPathLabel, 0, 0);
         content.Controls.Add(_skillGrid, 0, 1);
         UpdateSkillPathLabel();
-        return Card(content, "Skills from Codex / Claude Code");
+        var card = Card(content, _text.SkillCardTitle);
+        _skillCardTitle = card.Controls.OfType<Label>().FirstOrDefault();
+        return card;
     }
 
     private void UpdateSkillPathLabel()
     {
         if (_skillPathLabel is null)
             return;
-        _skillPathLabel.Text =
-            $"Codex: {_skillPaths.Codex}  |  Claude: {_skillPaths.ClaudeCode}  |  DSH target: {_skillPaths.DshTarget}";
+        _skillPathLabel.Text = string.Format(
+            _text.SkillPathFormat,
+            _skillPaths.Codex,
+            _skillPaths.ClaudeCode,
+            _skillPaths.DshTarget);
     }
 
     private async Task ScanSkillsAsync(CancellationToken cancellationToken)
     {
         _scanSkillsButton.Enabled = false;
         _importSkillsButton.Enabled = false;
-        _skillStatus.Text = "Scanning Codex and Claude Code skills...";
+        _skillStatus.Text = _text.SkillScanning;
         try
         {
             _skills = await _skillInventory.ScanAsync(cancellationToken);
@@ -262,15 +287,15 @@ public sealed class PluginSettingsPage : PageBase
                 row.Cells[6].Value = skill.Warning;
             }
             _skillsLoaded = true;
-            _skillStatus.Text = $"Found {_skills.Count} skills. Select New or Conflict items to import.";
+            _skillStatus.Text = _text.SkillFound(_skills.Count);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _skillStatus.Text = "Skill scan canceled.";
+            _skillStatus.Text = _text.SkillScanCanceled;
         }
         catch (Exception exception)
         {
-            _skillStatus.Text = $"Skill scan failed: {exception.Message}";
+            _skillStatus.Text = _text.SkillScanFailed(exception.Message);
             _skillStatus.ForeColor = Theme.Palette.Danger;
         }
         finally
@@ -290,15 +315,15 @@ public sealed class PluginSettingsPage : PageBase
             .ToArray();
         if (selected.Length == 0)
         {
-            _skillStatus.Text = "Select at least one New or Conflict skill.";
+            _skillStatus.Text = _text.SkillSelectAtLeastOne;
             return;
         }
 
         if (selected.Any(skill => skill.State == SkillImportState.Conflict)
             && MessageBox.Show(
                 this,
-                "Some target skills already exist. A timestamped backup will be created before replacement. Continue?",
-                "Confirm skill replacement",
+                _text.SkillConflictPrompt,
+                _text.SkillConflictTitle,
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning) != DialogResult.Yes)
             return;
@@ -315,14 +340,14 @@ public sealed class PluginSettingsPage : PageBase
                 if (result.Succeeded) succeeded++; else failures++;
             }
             _skillStatus.ForeColor = failures == 0 ? Theme.Palette.Success : Theme.Palette.Danger;
-            _skillStatus.Text = $"Imported {succeeded}; failed {failures}. Restart DSH if a new skill is not visible.";
+            _skillStatus.Text = _text.SkillImportResult(succeeded, failures);
             _skillsLoaded = false;
             await ScanSkillsAsync(CancellationToken.None);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             _skillStatus.ForeColor = Theme.Palette.Danger;
-            _skillStatus.Text = $"Skill import failed: {exception.Message}";
+            _skillStatus.Text = _text.SkillImportFailed(exception.Message);
         }
         finally
         {
@@ -339,21 +364,87 @@ public sealed class PluginSettingsPage : PageBase
                 && SkillImportService.IsSelectable(skill));
     }
 
-    private static string DescribeSkillState(SkillImportState state) => state switch
+    private string DescribeSkillState(SkillImportState state) => state switch
     {
-        SkillImportState.New => "New",
-        SkillImportState.SameContent => "Same content",
-        SkillImportState.Conflict => "Conflict (backup)",
-        SkillImportState.Invalid => "Invalid",
-        SkillImportState.Unsupported => "Unsupported",
-        _ => "Error"
+        SkillImportState.New => _text == LauncherTextCatalog.English ? "New" : "新增",
+        SkillImportState.SameContent => _text == LauncherTextCatalog.English ? "Same content" : "内容相同",
+        SkillImportState.Conflict => _text == LauncherTextCatalog.English ? "Conflict (backup)" : "冲突（将备份）",
+        SkillImportState.Invalid => _text == LauncherTextCatalog.English ? "Invalid" : "无效",
+        SkillImportState.Unsupported => _text == LauncherTextCatalog.English ? "Unsupported" : "不支持",
+        _ => _text == LauncherTextCatalog.English ? "Error" : "错误"
     };
+
+    public override void ApplyLanguage(LauncherText text)
+    {
+        _text = text;
+        ApplyHeader(
+            text.PluginSettings,
+            text.Pick(
+                "扫描 Profile、第三方插件和运行时 Loader 状态，并安全切换启用状态。",
+                "Scan the Profile, third-party plugins and runtime Loader state, then safely toggle plugins."));
+        if (_pluginCardTitle is not null)
+            _pluginCardTitle.Text = text.Pick("已安装与运行时插件", "Installed and runtime plugins");
+        if (_refreshButton is not null)
+            _refreshButton.Text = text.Pick("重新扫描", "Rescan");
+        _toggleButton.Text = GetSelected()?.Enabled == false
+            ? text.Pick("启用插件", "Enable plugin")
+            : text.Pick("禁用插件", "Disable plugin");
+        if (_grid.Columns.Count >= 6)
+        {
+            _grid.Columns[0].HeaderText = text.Pick("插件", "Plugin");
+            _grid.Columns[1].HeaderText = text.Pick("版本", "Version");
+            _grid.Columns[2].HeaderText = text.Pick("状态", "Status");
+            _grid.Columns[3].HeaderText = text.Pick("运行阶段", "Runtime phase");
+            _grid.Columns[4].HeaderText = text.Pick("来源", "Source");
+            _grid.Columns[5].HeaderText = text.Pick("路径", "Path");
+        }
+        foreach (DataGridViewRow row in _grid.Rows)
+        {
+            if (row.Tag is not PluginInfo plugin)
+                continue;
+            row.Cells[2].Value = plugin.Enabled switch
+            {
+                true => text.Pick("已启用", "Enabled"),
+                false => text.Pick("已禁用", "Disabled"),
+                _ => text.Pick("未知", "Unknown")
+            };
+            if (plugin.FiberPhase is null)
+                row.Cells[3].Value = plugin.RuntimeAvailable ? text.Pick("未加载", "Not loaded") : text.Pick("未连接", "Disconnected");
+        }
+        _skillStatus.Text = _skillsLoaded ? text.SkillFound(_skills.Count) : text.SkillNotScanned;
+        _skillPathLabel.Text = string.Format(
+            text.SkillPathFormat,
+            _skillPaths.Codex,
+            _skillPaths.ClaudeCode,
+            _skillPaths.DshTarget);
+        _scanSkillsButton.Text = text.SkillScan;
+        _importSkillsButton.Text = text.SkillImportSelected;
+        if (_skillCardTitle is not null)
+            _skillCardTitle.Text = text.SkillCardTitle;
+        if (_skillGrid.Columns.Count >= 7)
+        {
+            _skillGrid.Columns[0].HeaderText = text.SkillSelectColumn;
+            _skillGrid.Columns[1].HeaderText = text.SkillNameColumn;
+            _skillGrid.Columns[2].HeaderText = text.SkillDescriptionColumn;
+            _skillGrid.Columns[3].HeaderText = text.SkillSourceColumn;
+            _skillGrid.Columns[4].HeaderText = text.SkillStateColumn;
+            _skillGrid.Columns[5].HeaderText = text.SkillTargetColumn;
+            _skillGrid.Columns[6].HeaderText = text.SkillNoteColumn;
+        }
+        foreach (DataGridViewRow row in _skillGrid.Rows)
+        {
+            if (row.Tag is SkillInfo skill)
+                row.Cells[4].Value = DescribeSkillState(skill.State);
+        }
+    }
 
     private void UpdateToggleState()
     {
         var plugin = GetSelected();
         _toggleButton.Enabled = plugin is not null && plugin.ConfigId is not null;
-        _toggleButton.Text = plugin?.Enabled == false ? "启用插件" : "禁用插件";
+        _toggleButton.Text = plugin?.Enabled == false
+            ? _text.Pick("启用插件", "Enable plugin")
+            : _text.Pick("禁用插件", "Disable plugin");
     }
 
     private async void ToggleSelectedAsync(object? sender, EventArgs e)
@@ -376,11 +467,16 @@ public sealed class PluginSettingsPage : PageBase
             return;
 
         var running = (await _statusProbe.ProbeAsync(CancellationToken.None)).State == ServiceState.Running;
-        if (running && MessageBox.Show(this, "插件配置已更新，DSH 正在运行。现在重启服务使其生效吗？", "插件状态已修改",
+        if (running && MessageBox.Show(
+                this,
+                _text.Pick("插件配置已更新，DSH 正在运行。现在重启服务使其生效吗？", "Plugin configuration updated while DSH is running. Restart the service now to apply it?"),
+                _text.Pick("插件状态已修改", "Plugin state changed"),
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
         {
             var restart = await _serviceController.RestartAsync(CancellationToken.None);
-            _status.Text = restart.Succeeded ? "插件状态已应用，DSH 已重启" : $"插件已写入，但重启失败：{restart.CombinedOutput}";
+            _status.Text = restart.Succeeded
+                ? _text.Pick("插件状态已应用，DSH 已重启", "Plugin state applied; DSH restarted")
+                : _text.Pick($"插件已写入，但重启失败：{restart.CombinedOutput}", $"Plugin was written, but restart failed: {restart.CombinedOutput}");
         }
         await RefreshAsync(CancellationToken.None);
     }

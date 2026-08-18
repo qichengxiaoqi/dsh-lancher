@@ -5,6 +5,7 @@ namespace DshPlusPlus.UI.Controls;
 
 public sealed class MetricCard : Panel
 {
+    private readonly Label _caption = new();
     private readonly Label _value = new();
     private readonly Label _detail = new();
     private readonly ToolTip _toolTip = new();
@@ -17,14 +18,11 @@ public sealed class MetricCard : Panel
         Padding = new Padding(14, 10, 14, 8);
         BackColor = palette.SurfaceRaised;
         BorderStyle = BorderStyle.FixedSingle;
-        var captionLabel = new Label
-        {
-            Text = caption,
-            ForeColor = palette.Muted,
-            Dock = DockStyle.Top,
-            AutoSize = true,
-            Tag = "small"
-        };
+        _caption.Text = caption;
+        _caption.ForeColor = palette.Muted;
+        _caption.Dock = DockStyle.Top;
+        _caption.AutoSize = true;
+        _caption.Tag = "small";
         _value.Text = value;
         _value.ForeColor = palette.Text;
         _value.Dock = DockStyle.Top;
@@ -37,8 +35,10 @@ public sealed class MetricCard : Panel
         _detail.Tag = "small";
         Controls.Add(_detail);
         Controls.Add(_value);
-        Controls.Add(captionLabel);
+        Controls.Add(_caption);
     }
+
+    public void SetCaption(string caption) => _caption.Text = caption;
 
     public void SetValue(string value, string? detail = null)
     {

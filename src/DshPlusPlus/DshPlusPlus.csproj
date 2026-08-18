@@ -7,8 +7,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>0.2.3</Version>
-    <InformationalVersion>0.2.3</InformationalVersion>
+    <Version>0.2.4</Version>
+    <InformationalVersion>0.2.4</InformationalVersion>
     <AssemblyName>dsh++</AssemblyName>
     <RootNamespace>DshPlusPlus</RootNamespace>
     <ApplicationIcon>Assets\dsh-whale.ico</ApplicationIcon>

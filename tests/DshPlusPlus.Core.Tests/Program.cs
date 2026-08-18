@@ -177,6 +177,48 @@ static class Program
             Assert.False(settings.Theme.NavigationCollapsed);
             Assert.False(settings.Theme.AutoCollapseNavigation);
             Assert.True(settings.CloseToTray);
+            Assert.Equal(LauncherLanguage.System, settings.Language);
+        });
+
+        Run("system language resolves from UI culture", () =>
+        {
+            Assert.Equal(
+                LauncherLanguage.SimplifiedChinese,
+                LauncherLanguageResolver.Resolve(LauncherLanguage.System, new System.Globalization.CultureInfo("zh-CN")));
+            Assert.Equal(
+                LauncherLanguage.English,
+                LauncherLanguageResolver.Resolve(LauncherLanguage.System, new System.Globalization.CultureInfo("en-US")));
+            Assert.Equal(
+                LauncherLanguage.English,
+                LauncherLanguageResolver.Resolve(LauncherLanguage.English, new System.Globalization.CultureInfo("zh-CN")));
+        });
+
+        Run("english catalog translates page chrome", () =>
+        {
+            var text = LauncherTextCatalog.English;
+            Assert.Equal("Interface language", text.Pick("界面语言", "Interface language"));
+            Assert.Equal("Launcher Settings", text.LauncherSettings);
+            Assert.Equal("Scan skills", text.SkillScan);
+        });
+
+        await RunAsync("language setting round trip", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-language-setting-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(root);
+            try
+            {
+                var file = Path.Combine(root, "settings.json");
+                var store = new LauncherSettingsStore(file, new LauncherPathDiscovery());
+                await store.SaveAsync(
+                    LauncherSettings.CreateDefault() with { Language = LauncherLanguage.English },
+                    CancellationToken.None);
+                var loaded = new LauncherSettingsStore(file, new LauncherPathDiscovery()).Load();
+                Assert.Equal(LauncherLanguage.English, loaded.Language);
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
         });
 
         await RunAsync("close behavior setting round trip", async () =>
@@ -987,6 +1029,70 @@ static class Program
                 runner.Last.Arguments);
         });
 
+        await RunAsync("service controller accepts a ready service after a launcher process failure", async () =>
+        {
+            var paths = DshPaths.CreateDefault();
+            var runner = new FailingRunner();
+            var controller = new DshServiceController(
+                runner,
+                paths,
+                _ => Task.FromResult(new ServiceProbeResult(ServiceState.Running, "ready")));
+
+            var result = await controller.StartAsync(CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Contains("ready", result.CombinedOutput);
+        });
+
+        await RunAsync("service controller rejects a script success without DSH health", async () =>
+        {
+            var paths = DshPaths.CreateDefault();
+            var runner = new RecordingRunner();
+            var controller = new DshServiceController(
+                runner,
+                paths,
+                _ => Task.FromResult(new ServiceProbeResult(ServiceState.Stopped, "not ready")));
+
+            var result = await controller.StartAsync(CancellationToken.None);
+
+            Assert.False(result.Succeeded);
+            Assert.Contains("host.describe", result.CombinedOutput);
+        });
+
+        await RunAsync("status probe coordinator coalesces concurrent checks", async () =>
+        {
+            var calls = 0;
+            var coordinator = new ServiceProbeCoordinator(async _ =>
+            {
+                Interlocked.Increment(ref calls);
+                await Task.Delay(30);
+                return new ServiceProbeResult(ServiceState.Running, "ready");
+            });
+
+            var results = await Task.WhenAll(
+                coordinator.ProbeAsync(CancellationToken.None),
+                coordinator.ProbeAsync(CancellationToken.None));
+
+            Assert.Equal(1, calls);
+            Assert.True(results.All(result => result.State == ServiceState.Running));
+        });
+
+        await RunAsync("manual status check bypasses the probe cache", async () =>
+        {
+            var calls = 0;
+            var coordinator = new ServiceProbeCoordinator(_ =>
+            {
+                Interlocked.Increment(ref calls);
+                return Task.FromResult(new ServiceProbeResult(ServiceState.Running, "ready"));
+            });
+
+            await coordinator.ProbeAsync(CancellationToken.None);
+            await coordinator.ProbeAsync(CancellationToken.None);
+            await coordinator.ProbeAsync(CancellationToken.None, forceRefresh: true);
+
+            Assert.Equal(2, calls);
+        });
+
         Run("tcp unavailable means stopped", () =>
             Assert.Equal(ServiceState.Stopped, ServiceStatusMapper.TcpUnavailable().State));
         Run("http 500 means running", () =>
@@ -1301,6 +1407,22 @@ static class Program
             Calls.Add(Last);
             return Task.FromResult(new ProcessResult(fileName, arguments, 0, string.Empty, string.Empty));
         }
+    }
+
+    private sealed class FailingRunner : IProcessRunner
+    {
+        public Task<ProcessResult> RunAsync(
+            string fileName,
+            IReadOnlyList<string> arguments,
+            string workingDirectory,
+            TimeSpan timeout,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ProcessResult(
+                fileName,
+                arguments.ToArray(),
+                1,
+                string.Empty,
+                "launcher returned an error"));
     }
 
     private sealed class StubHttpHandler : HttpMessageHandler

@@ -51,21 +51,31 @@ public abstract class PageViewModel : ObservableObject
     }
 }
 
+public sealed record LauncherLanguageOption(LauncherLanguage Value, string Label)
+{
+    public override string ToString() => Label;
+}
+
 public sealed class NavigationItemViewModel : ObservableObject
 {
     private bool _isSelected;
+    private string _title;
 
     public NavigationItemViewModel(string number, string icon, string title, PageViewModel page)
     {
         Number = number;
         Icon = icon;
-        Title = title;
+        _title = title;
         Page = page;
     }
 
     public string Number { get; }
     public string Icon { get; }
-    public string Title { get; }
+    public string Title
+    {
+        get => _title;
+        private set => SetProperty(ref _title, value);
+    }
     public PageViewModel Page { get; }
     public bool IsSelected
     {
@@ -79,6 +89,8 @@ public sealed class NavigationItemViewModel : ObservableObject
         get => _showTitle;
         set => SetProperty(ref _showTitle, value);
     }
+
+    public void UpdateTitle(string title) => Title = title;
 }
 
 public sealed class MainWindowViewModel : ObservableObject, IDisposable
@@ -87,10 +99,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private PageViewModel _currentPage;
     private bool _isNavigationCollapsed;
     private string _platformLabel = RuntimeInformationLabel();
+    private LauncherText _text;
 
     public MainWindowViewModel(AvaloniaAppHost host)
     {
         _host = host;
+        _text = LauncherTextCatalog.Get(host.Settings.Language);
         DshManagement = new DshManagementPageViewModel(host);
         Maintenance = new MaintenancePageViewModel(host);
         Api = new DeepSeekApiPageViewModel(host);
@@ -99,12 +113,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         LauncherSettings = new LauncherSettingsPageViewModel(host);
         Pages = new ObservableCollection<NavigationItemViewModel>
         {
-            new("01", "⌂", "DSH 管理", DshManagement),
-            new("02", "↻", "安装维护", Maintenance),
-            new("03", "◇", "DeepSeek API", Api),
-            new("04", "⌘", "系统级设置", SystemSettings),
-            new("05", "◈", "插件设置", Plugins),
-            new("06", "⚙", "启动器设置", LauncherSettings)
+            new("01", "⌂", _text.DshManagement, DshManagement),
+            new("02", "↻", _text.Maintenance, Maintenance),
+            new("03", "◇", _text.DeepSeekApi, Api),
+            new("04", "⌘", _text.SystemSettings, SystemSettings),
+            new("05", "◈", _text.PluginSettings, Plugins),
+            new("06", "⚙", _text.LauncherSettings, LauncherSettings)
         };
         _currentPage = ResolveStartPage(host.Settings.StartPage);
         IsNavigationCollapsed = host.Settings.Theme.NavigationCollapsed;
@@ -169,6 +183,25 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public void SelectPage(NavigationItemViewModel item) => CurrentPage = item.Page;
 
+    public void ApplyLanguage(LauncherLanguage language)
+    {
+        _text = LauncherTextCatalog.Get(language);
+        var titles = new[]
+        {
+            _text.DshManagement,
+            _text.Maintenance,
+            _text.DeepSeekApi,
+            _text.SystemSettings,
+            _text.PluginSettings,
+            _text.LauncherSettings
+        };
+        for (var index = 0; index < Math.Min(Pages.Count, titles.Length); index++)
+            Pages[index].UpdateTitle(titles[index]);
+        LauncherSettings.ApplyLanguage(_text);
+        Plugins.ApplyLanguage(_text);
+        OnPropertyChanged(nameof(NavigationDisplayMode));
+    }
+
     private async Task RefreshCurrentPageAsync()
     {
         try
@@ -182,7 +215,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     private PageViewModel ResolveStartPage(string startPage) =>
-        Pages.FirstOrDefault(item => string.Equals(item.Title, startPage, StringComparison.OrdinalIgnoreCase))?.Page
+        Pages.FirstOrDefault(item =>
+            string.Equals(item.Title, startPage, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(item.Page.Title, startPage, StringComparison.OrdinalIgnoreCase))?.Page
         ?? DshManagement;
 
     public void Dispose()
@@ -210,6 +245,7 @@ public sealed class DshManagementPageViewModel : PageViewModel
         StartCommand = new AsyncCommand(StartAsync, () => !_isBusy);
         StopCommand = new AsyncCommand(StopAsync, () => !_isBusy);
         RestartCommand = new AsyncCommand(RestartAsync, () => !_isBusy);
+        CheckStatusCommand = new AsyncCommand(CheckStatusAsync, () => !_isBusy);
         CheckGitCommand = new AsyncCommand(CheckGitAsync, () => !_isBusy);
         OpenWebCommand = new RelayCommand(() => OpenExternal(Host.Paths.WebUrl));
     }
@@ -225,6 +261,7 @@ public sealed class DshManagementPageViewModel : PageViewModel
     public ICommand StartCommand { get; }
     public ICommand StopCommand { get; }
     public ICommand RestartCommand { get; }
+    public ICommand CheckStatusCommand { get; }
     public ICommand CheckGitCommand { get; }
     public ICommand OpenWebCommand { get; }
 
@@ -232,7 +269,7 @@ public sealed class DshManagementPageViewModel : PageViewModel
     {
         try
         {
-            var result = await Host.StatusProbe.ProbeAsync(cancellationToken);
+            var result = await Host.StatusProbe.ProbeDshAsync(cancellationToken);
             ServiceStatus = $"{result.State} · {result.Message}";
             Status = "Service status refreshed";
         }
@@ -246,6 +283,21 @@ public sealed class DshManagementPageViewModel : PageViewModel
     private async Task StartAsync() => await RunServiceActionAsync("start", Host.ServiceController.StartAsync);
     private async Task StopAsync() => await RunServiceActionAsync("stop", Host.ServiceController.StopAsync);
     private async Task RestartAsync() => await RunServiceActionAsync("restart", Host.ServiceController.RestartAsync);
+
+    private async Task CheckStatusAsync()
+    {
+        try
+        {
+            await RefreshStatusAsync(CancellationToken.None, forceRefresh: true);
+            AppendLog($"[{DateTime.Now:T}] DSH manual status check completed.");
+            Status = "Manual DSH status check completed";
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            AppendLog($"[{DateTime.Now:T}] DSH status check: {exception.Message}");
+            Status = "Status probe failed";
+        }
+    }
 
     private async Task RunServiceActionAsync(string action, Func<CancellationToken, Task<ProcessResult>> operation)
     {
@@ -265,7 +317,7 @@ public sealed class DshManagementPageViewModel : PageViewModel
             var result = await operation(CancellationToken.None);
             AppendLog($"[{DateTime.Now:T}] {action}: {Summarize(result)}");
             Status = result.Succeeded ? $"{action} completed" : $"{action} failed";
-            await RefreshAsync(CancellationToken.None);
+            await RefreshStatusAsync(CancellationToken.None, forceRefresh: true);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -276,6 +328,13 @@ public sealed class DshManagementPageViewModel : PageViewModel
         {
             _isBusy = false;
         }
+    }
+
+    private async Task RefreshStatusAsync(CancellationToken cancellationToken, bool forceRefresh)
+    {
+        var result = await Host.StatusProbe.ProbeDshAsync(cancellationToken, forceRefresh);
+        ServiceStatus = $"{result.State} · {result.Message}";
+        Status = "Service status refreshed";
     }
 
     private async Task CheckGitAsync()
@@ -635,10 +694,12 @@ public sealed class SkillRowViewModel : ObservableObject
 {
     private bool _isSelected;
     private string _status;
+    private LauncherText _text;
 
-    public SkillRowViewModel(SkillInfo info)
+    public SkillRowViewModel(SkillInfo info, LauncherText? text = null)
     {
         Info = info;
+        _text = text ?? LauncherTextCatalog.Get(LauncherLanguage.System);
         _status = DescribeState(info.State);
     }
 
@@ -653,6 +714,13 @@ public sealed class SkillRowViewModel : ObservableObject
     public bool IsSelected { get => _isSelected; set => SetProperty(ref _isSelected, value); }
     public string Status { get => _status; set => SetProperty(ref _status, value); }
 
+    public void ApplyLanguage(LauncherText text)
+    {
+        _text = text;
+        OnPropertyChanged(nameof(State));
+        Status = DescribeState(Info.State);
+    }
+
     public void Update(SkillInfo info)
     {
         Info = info;
@@ -666,23 +734,25 @@ public sealed class SkillRowViewModel : ObservableObject
         Status = DescribeState(info.State);
     }
 
-    private static string DescribeState(SkillImportState state) => state switch
+    private string DescribeState(SkillImportState state) => state switch
     {
-        SkillImportState.New => "New",
-        SkillImportState.SameContent => "Same content",
-        SkillImportState.Conflict => "Conflict (backup)",
-        SkillImportState.Invalid => "Invalid",
-        SkillImportState.Unsupported => "Unsupported",
-        _ => "Error"
+        SkillImportState.New => _text == LauncherTextCatalog.English ? "New" : "新增",
+        SkillImportState.SameContent => _text == LauncherTextCatalog.English ? "Same content" : "内容相同",
+        SkillImportState.Conflict => _text == LauncherTextCatalog.English ? "Conflict (backup)" : "冲突（将备份）",
+        SkillImportState.Invalid => _text == LauncherTextCatalog.English ? "Invalid" : "无效",
+        SkillImportState.Unsupported => _text == LauncherTextCatalog.English ? "Unsupported" : "不支持",
+        _ => _text == LauncherTextCatalog.English ? "Error" : "错误"
     };
 }
 
 public sealed class PluginSettingsPageViewModel : PageViewModel
 {
     private bool _skillsLoaded;
+    private LauncherText _text;
     public PluginSettingsPageViewModel(AvaloniaAppHost host)
         : base(host, "插件设置", "PLUGINS / 05", "Inventory profile, local and runtime plugins. Toggle state writes a safe patch backup.")
     {
+        _text = LauncherTextCatalog.Get(host.Settings.Language);
         ScanSkillsCommand = new AsyncCommand(() => ScanSkillsAsync());
         ImportSelectedSkillsCommand = new AsyncCommand(ImportSelectedSkillsAsync);
     }
@@ -694,6 +764,15 @@ public sealed class PluginSettingsPageViewModel : PageViewModel
     public string DshSkillsPath => Host.SkillPaths.DshTarget;
     public ICommand ScanSkillsCommand { get; }
     public ICommand ImportSelectedSkillsCommand { get; }
+    public LauncherText Text => _text;
+
+    public void ApplyLanguage(LauncherText text)
+    {
+        _text = text;
+        OnPropertyChanged(nameof(Text));
+        foreach (var row in Skills)
+            row.ApplyLanguage(text);
+    }
 
     public override async Task RefreshAsync(CancellationToken cancellationToken)
     {
@@ -720,17 +799,17 @@ public sealed class PluginSettingsPageViewModel : PageViewModel
             var items = await Host.SkillInventory.ScanAsync(cancellationToken);
             Skills.Clear();
             foreach (var item in items)
-                Skills.Add(new SkillRowViewModel(item));
+                Skills.Add(new SkillRowViewModel(item, _text));
             _skillsLoaded = true;
-            Status = $"Found {Skills.Count} skills. Select New or Conflict items to import.";
+            Status = _text.SkillFound(Skills.Count);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            Status = "Skill scan canceled.";
+            Status = _text.SkillScanCanceled;
         }
         catch (Exception exception)
         {
-            Status = $"Skill scan failed: {DescribeException(exception)}";
+            Status = _text.SkillScanFailed(DescribeException(exception));
         }
     }
 
@@ -739,7 +818,7 @@ public sealed class PluginSettingsPageViewModel : PageViewModel
         var selected = Skills.Where(row => row.IsSelected && row.CanImport).ToArray();
         if (selected.Length == 0)
         {
-            Status = "Select at least one New or Conflict skill.";
+            Status = _text.SkillSelectAtLeastOne;
             return;
         }
 
@@ -752,7 +831,7 @@ public sealed class PluginSettingsPageViewModel : PageViewModel
             if (result.Succeeded) succeeded++; else failed++;
         }
 
-        Status = $"Imported {succeeded}; failed {failed}. Conflicts use timestamped backups; restart DSH if needed.";
+        Status = _text.SkillImportResult(succeeded, failed);
         _skillsLoaded = false;
         await ScanSkillsAsync();
     }
@@ -785,16 +864,21 @@ public sealed class LauncherSettingsPageViewModel : PageViewModel
     private string _refreshSeconds;
     private bool _autoUpdate;
     private string _updateIntervalHours;
+    private LauncherLanguageOption _selectedLanguage;
+    private LauncherText _text;
 
     public LauncherSettingsPageViewModel(AvaloniaAppHost host)
         : base(host, "启动器设置", "LAUNCHER / 06", "Tune the responsive shell, refresh cadence and GitHub update checks.")
     {
+        _text = LauncherTextCatalog.Get(host.Settings.Language);
         var theme = host.Settings.Theme;
         _themeName = theme.Name; _fontScale = theme.FontScale.ToString(CultureInfo.InvariantCulture);
         _navigationCollapsed = theme.NavigationCollapsed; _autoCollapse = theme.AutoCollapseNavigation;
         _refreshSeconds = host.Settings.RefreshSeconds.ToString(CultureInfo.InvariantCulture);
         _autoUpdate = host.Settings.AutoUpdateEnabled;
         _updateIntervalHours = host.Settings.UpdateCheckIntervalHours.ToString(CultureInfo.InvariantCulture);
+        LanguageOptions = BuildLanguageOptions(_text);
+        _selectedLanguage = LanguageOptions.First(option => option.Value == host.Settings.Language);
         SaveCommand = new AsyncCommand(SaveAsync);
         CheckUpdateCommand = new AsyncCommand(CheckUpdateAsync);
     }
@@ -806,6 +890,13 @@ public sealed class LauncherSettingsPageViewModel : PageViewModel
     public string RefreshSeconds { get => _refreshSeconds; set => SetProperty(ref _refreshSeconds, value); }
     public bool AutoUpdate { get => _autoUpdate; set => SetProperty(ref _autoUpdate, value); }
     public string UpdateIntervalHours { get => _updateIntervalHours; set => SetProperty(ref _updateIntervalHours, value); }
+    public LauncherText Text => _text;
+    public IReadOnlyList<LauncherLanguageOption> LanguageOptions { get; private set; }
+    public LauncherLanguageOption SelectedLanguage
+    {
+        get => _selectedLanguage;
+        set => SetProperty(ref _selectedLanguage, value);
+    }
     public ICommand SaveCommand { get; }
     public ICommand CheckUpdateCommand { get; }
 
@@ -821,6 +912,7 @@ public sealed class LauncherSettingsPageViewModel : PageViewModel
         var settings = Host.Settings with
         {
             Theme = theme,
+            Language = SelectedLanguage.Value,
             RefreshSeconds = ParseClamped(RefreshSeconds, 5, 120, 10),
             AutoUpdateEnabled = AutoUpdate,
             UpdateCheckIntervalHours = ParseClamped(UpdateIntervalHours, 6, 168, 24)
@@ -828,6 +920,7 @@ public sealed class LauncherSettingsPageViewModel : PageViewModel
         try
         {
             await Host.SaveSettingsAsync(settings);
+            Host.MainWindow.ApplyLanguage(settings.Language);
             Status = "Saved. New UI metrics apply immediately; service paths apply after restart.";
         }
         catch (Exception exception) when (exception is not OperationCanceledException) { Status = exception.Message; }
@@ -847,4 +940,21 @@ public sealed class LauncherSettingsPageViewModel : PageViewModel
     private static int ParseClamped(string value, int min, int max, int fallback) =>
         int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)
             ? Math.Clamp(number, min, max) : fallback;
+
+    public void ApplyLanguage(LauncherText text)
+    {
+        _text = text;
+        var selected = SelectedLanguage.Value;
+        LanguageOptions = BuildLanguageOptions(text);
+        OnPropertyChanged(nameof(Text));
+        OnPropertyChanged(nameof(LanguageOptions));
+        SelectedLanguage = LanguageOptions.First(option => option.Value == selected);
+    }
+
+    private static IReadOnlyList<LauncherLanguageOption> BuildLanguageOptions(LauncherText text) =>
+    [
+        new(LauncherLanguage.System, text.LanguageSystem),
+        new(LauncherLanguage.SimplifiedChinese, text.LanguageSimplifiedChinese),
+        new(LauncherLanguage.English, text.LanguageEnglish)
+    ];
 }

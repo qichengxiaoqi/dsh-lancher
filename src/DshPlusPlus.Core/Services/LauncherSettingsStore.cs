@@ -79,7 +79,10 @@ public sealed class LauncherSettingsStore
         return settings with
         {
             DshUpdates = updates,
-            SkillImport = settings.SkillImport ?? new SkillImportSettings()
+            SkillImport = settings.SkillImport ?? new SkillImportSettings(),
+            Language = Enum.IsDefined(settings.Language)
+                ? settings.Language
+                : LauncherLanguage.System
         };
     }
 

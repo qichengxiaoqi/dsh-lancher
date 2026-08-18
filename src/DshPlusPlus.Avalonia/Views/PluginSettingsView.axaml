@@ -39,15 +39,15 @@
     <Border Grid.Row="2" Classes="card" Background="#10232C" BorderBrush="#1E5567" Padding="12">
       <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
         <StackPanel>
-          <TextBlock Text="SKILL IMPORT" Classes="eyebrow" />
-          <TextBlock Text="Select skills from Codex or Claude Code; conflicts are backed up before replacement." Classes="muted" TextWrapping="Wrap" Margin="0,5,0,0" />
+          <TextBlock Text="{Binding Text.SkillCardTitle}" Classes="eyebrow" />
+          <TextBlock Text="{Binding Text.SkillDescription}" Classes="muted" TextWrapping="Wrap" Margin="0,5,0,0" />
         </StackPanel>
-        <Button Grid.Column="1" Classes="ghost" Content="Scan skills" Command="{Binding ScanSkillsCommand}" />
-        <Button Grid.Column="2" Classes="primary" Content="Import selected" Command="{Binding ImportSelectedSkillsCommand}" />
+        <Button Grid.Column="1" Classes="ghost" Content="{Binding Text.SkillScan}" Command="{Binding ScanSkillsCommand}" />
+        <Button Grid.Column="2" Classes="primary" Content="{Binding Text.SkillImportSelected}" Command="{Binding ImportSelectedSkillsCommand}" />
         <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,8,0,0" Spacing="2">
           <TextBlock Text="{Binding CodexSkillsPath}" Classes="muted" TextTrimming="CharacterEllipsis" />
           <TextBlock Text="{Binding ClaudeSkillsPath}" Classes="muted" TextTrimming="CharacterEllipsis" />
-          <TextBlock Text="Target: {Binding DshSkillsPath}" Classes="muted" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding DshSkillsPath}" Classes="muted" TextTrimming="CharacterEllipsis" />
         </StackPanel>
       </Grid>
     </Border>

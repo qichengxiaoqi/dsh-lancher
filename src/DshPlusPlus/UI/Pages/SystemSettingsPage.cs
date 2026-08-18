@@ -10,16 +10,28 @@ namespace DshPlusPlus.UI.Pages;
 public sealed class SystemSettingsPage : PageBase
 {
     private readonly SystemInstructionScanner _scanner;
+    private LauncherText _text;
     private readonly ListView _files = new();
     private readonly RichTextBox _preview = new();
     private readonly Label _status;
     private readonly ToolTip _fileToolTip = new();
+    private Label? _configCardTitle;
+    private Label? _previewCardTitle;
+    private GlowButton? _refreshButton;
+    private GlowButton? _openButton;
+    private GlowButton? _revealButton;
 
-    public SystemSettingsPage(SystemInstructionScanner scanner, ThemeManager theme)
-        : base(theme, "系统级设置", "查看 DSH 的 AGENTS.md、CLAUDE.md 兼容文件和结构化配置层。")
+    public SystemSettingsPage(SystemInstructionScanner scanner, ThemeManager theme, LauncherText? text = null)
+        : base(
+            theme,
+            LauncherTextCatalog.Get(LauncherLanguage.System).SystemSettings,
+            LauncherTextCatalog.Get(LauncherLanguage.System).Pick(
+                "查看 DSH 的 AGENTS.md、CLAUDE.md 兼容文件和结构化配置层。",
+                "Inspect DSH AGENTS.md, CLAUDE.md compatibility files and structured configuration layers."))
     {
         _scanner = scanner;
-        _status = MutedLabel("正在准备扫描");
+        _text = text ?? LauncherTextCatalog.Get(LauncherLanguage.System);
+        _status = MutedLabel(_text.Pick("正在准备扫描", "Preparing scan"));
         Build();
     }
 
@@ -38,13 +50,15 @@ public sealed class SystemSettingsPage : PageBase
             var item = new ListViewItem(Path.GetFileName(info.Path));
             item.SubItems.Add(info.Scope);
             item.SubItems.Add(info.Kind.ToString());
-            item.SubItems.Add(info.IsActive ? "生效" : "兼容/重复");
+            item.SubItems.Add(info.IsActive ? _text.Pick("生效", "Active") : _text.Pick("兼容/重复", "Compatible/duplicate"));
             item.SubItems.Add(info.Size.ToString());
             item.Tag = info;
             _files.Items.Add(item);
         }
         _files.EndUpdate();
-        _status.Text = $"已发现 {infos.Count} 个配置文件；AGENTS.md 为主要指令文件，CLAUDE.md 用于兼容。";
+        _status.Text = _text.Pick(
+            $"已发现 {infos.Count} 个配置文件；AGENTS.md 为主要指令文件，CLAUDE.md 用于兼容。",
+            $"Found {infos.Count} configuration files. AGENTS.md is the primary instruction file; CLAUDE.md is supported for compatibility.");
     }
 
     private void Build()
@@ -58,11 +72,11 @@ public sealed class SystemSettingsPage : PageBase
         _files.FullRowSelect = true;
         _files.HideSelection = false;
         _files.MultiSelect = false;
-        _files.Columns.Add("文件");
-        _files.Columns.Add("作用域");
-        _files.Columns.Add("类型");
-        _files.Columns.Add("状态");
-        _files.Columns.Add("字节");
+        _files.Columns.Add(_text.Pick("文件", "File"));
+        _files.Columns.Add(_text.Pick("作用域", "Scope"));
+        _files.Columns.Add(_text.Pick("类型", "Kind"));
+        _files.Columns.Add(_text.Pick("状态", "Status"));
+        _files.Columns.Add(_text.Pick("字节", "Bytes"));
         _files.Resize += (_, _) => ResizeFileColumns();
         _files.ItemMouseHover += (_, e) =>
         {
@@ -88,25 +102,63 @@ public sealed class SystemSettingsPage : PageBase
         };
         split.Panel1.Padding = new Padding(6);
         split.Panel2.Padding = new Padding(6);
-        split.Panel1.Controls.Add(Card(_files, "配置层级"));
-        split.Panel2.Controls.Add(Card(_preview, "只读预览"));
+        var configCard = Card(_files, _text.Pick("配置层级", "Configuration layers"));
+        var previewCard = Card(_preview, _text.Pick("只读预览", "Read-only preview"));
+        _configCardTitle = configCard.Controls.OfType<Label>().FirstOrDefault();
+        _previewCardTitle = previewCard.Controls.OfType<Label>().FirstOrDefault();
+        split.Panel1.Controls.Add(configCard);
+        split.Panel2.Controls.Add(previewCard);
         layout.Controls.Add(split, 0, 1);
 
         var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, Padding = new Padding(6, 5, 0, 0) };
         footer.Controls.Add(_status);
-        var refresh = new GlowButton("重新扫描", Theme.Palette, primary: true);
-        refresh.Click += async (_, _) =>
+        _refreshButton = new GlowButton(_text.Pick("重新扫描", "Rescan"), Theme.Palette, primary: true);
+        _refreshButton.Click += async (_, _) =>
         {
             _scanner.ClearCache();
             await RefreshAsync(CancellationToken.None);
         };
-        var open = new GlowButton("打开编辑器", Theme.Palette);
-        open.Click += (_, _) => OpenSelected();
-        var reveal = new GlowButton("定位文件", Theme.Palette);
-        reveal.Click += (_, _) => RevealSelected();
-        footer.Controls.AddRange([refresh, open, reveal]);
+        _openButton = new GlowButton(_text.Pick("打开编辑器", "Open editor"), Theme.Palette);
+        _openButton.Click += (_, _) => OpenSelected();
+        _revealButton = new GlowButton(_text.Pick("定位文件", "Reveal file"), Theme.Palette);
+        _revealButton.Click += (_, _) => RevealSelected();
+        footer.Controls.AddRange([_refreshButton, _openButton, _revealButton]);
         layout.Controls.Add(footer, 0, 2);
         Controls.Add(layout);
+    }
+
+    public override void ApplyLanguage(LauncherText text)
+    {
+        _text = text;
+        ApplyHeader(
+            text.SystemSettings,
+            text.Pick(
+                "查看 DSH 的 AGENTS.md、CLAUDE.md 兼容文件和结构化配置层。",
+                "Inspect DSH AGENTS.md, CLAUDE.md compatibility files and structured configuration layers."));
+        if (_configCardTitle is not null)
+            _configCardTitle.Text = text.Pick("配置层级", "Configuration layers");
+        if (_previewCardTitle is not null)
+            _previewCardTitle.Text = text.Pick("只读预览", "Read-only preview");
+        if (_refreshButton is not null)
+            _refreshButton.Text = text.Pick("重新扫描", "Rescan");
+        if (_openButton is not null)
+            _openButton.Text = text.Pick("打开编辑器", "Open editor");
+        if (_revealButton is not null)
+            _revealButton.Text = text.Pick("定位文件", "Reveal file");
+        if (_files.Columns.Count >= 5)
+        {
+            _files.Columns[0].Text = text.Pick("文件", "File");
+            _files.Columns[1].Text = text.Pick("作用域", "Scope");
+            _files.Columns[2].Text = text.Pick("类型", "Kind");
+            _files.Columns[3].Text = text.Pick("状态", "Status");
+            _files.Columns[4].Text = text.Pick("字节", "Bytes");
+        }
+        _status.Text = text.Pick("正在准备扫描", "Preparing scan");
+        foreach (ListViewItem item in _files.Items)
+        {
+            if (item.Tag is SystemInstructionFileInfo info && item.SubItems.Count >= 4)
+                item.SubItems[3].Text = info.IsActive ? text.Pick("生效", "Active") : text.Pick("兼容/重复", "Compatible/duplicate");
+        }
     }
 
     private void ResizeFileColumns()
@@ -136,11 +188,11 @@ public sealed class SystemSettingsPage : PageBase
         {
             _preview.Text = File.Exists(info.Path)
                 ? File.ReadAllText(info.Path)
-                : "该项目是链接/目录，无法直接预览。";
+                : _text.Pick("该项目是链接/目录，无法直接预览。", "This item is a link or directory and cannot be previewed directly.");
         }
         catch (Exception ex)
         {
-            _preview.Text = $"读取失败：{ex.Message}";
+            _preview.Text = _text.Pick($"读取失败：{ex.Message}", $"Read failed: {ex.Message}");
         }
     }
 

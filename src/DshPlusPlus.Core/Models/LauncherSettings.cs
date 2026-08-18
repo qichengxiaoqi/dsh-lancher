@@ -19,9 +19,16 @@ public sealed record SkillImportSettings
     public string DshSkillsDirectory { get; init; } = string.Empty;
 }
 
+public enum LauncherLanguage
+{
+    System,
+    SimplifiedChinese,
+    English
+}
+
 public sealed record LauncherSettings
 {
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 7;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public bool AutoDetectPaths { get; init; } = true;
@@ -29,6 +36,7 @@ public sealed record LauncherSettings
     public DshUpdateSettings DshUpdates { get; init; } = new();
     public ThemeSettings Theme { get; init; } = new();
     public SkillImportSettings SkillImport { get; init; } = new();
+    public LauncherLanguage Language { get; init; } = LauncherLanguage.System;
     public string StartPage { get; init; } = "DSH 管理";
     public int RefreshSeconds { get; init; } = 10;
     public bool ShowLogDrawer { get; init; } = true;

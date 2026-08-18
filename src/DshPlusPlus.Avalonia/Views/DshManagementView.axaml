@@ -25,6 +25,7 @@
               <Button Classes="primary" Content="Start" Command="{Binding StartCommand}" />
               <Button Classes="ghost" Content="Stop" Command="{Binding StopCommand}" />
               <Button Classes="ghost" Content="Restart" Command="{Binding RestartCommand}" />
+              <Button Classes="ghost" Content="Check status" Command="{Binding CheckStatusCommand}" />
               <Button Classes="ghost" Content="Open Web UI" Command="{Binding OpenWebCommand}" />
             </WrapPanel>
           </StackPanel>

@@ -1,4 +1,5 @@
 using System.Drawing;
+using DshPlusPlus.Core.Services;
 using DshPlusPlus.UI.Theme;
 
 namespace DshPlusPlus.UI.Pages;
@@ -18,6 +19,8 @@ public abstract class PageBase : UserControl
     protected ThemeManager Theme { get; }
     protected string Title { get; }
     protected string Subtitle { get; }
+    private Label? _pageTitleLabel;
+    private Label? _pageSubtitleLabel;
 
     public virtual bool SupportsAutoRefresh => false;
 
@@ -34,7 +37,7 @@ public abstract class PageBase : UserControl
         for (var index = 1; index < rows; index++)
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / (rows - 1)));
         var heading = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Palette.Background };
-        var title = new Label
+        _pageTitleLabel = new Label
         {
             Text = Title,
             Dock = DockStyle.Top,
@@ -42,7 +45,7 @@ public abstract class PageBase : UserControl
             Tag = "title",
             ForeColor = Theme.Palette.Text
         };
-        var subtitle = new Label
+        _pageSubtitleLabel = new Label
         {
             Text = Subtitle,
             Dock = DockStyle.Top,
@@ -51,8 +54,8 @@ public abstract class PageBase : UserControl
             AutoEllipsis = true,
             Tag = "small"
         };
-        heading.Controls.Add(subtitle);
-        heading.Controls.Add(title);
+        heading.Controls.Add(_pageSubtitleLabel);
+        heading.Controls.Add(_pageTitleLabel);
         layout.Controls.Add(heading, 0, 0);
         return layout;
     }
@@ -97,6 +100,18 @@ public abstract class PageBase : UserControl
     };
 
     public virtual Task RefreshAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public virtual void ApplyLanguage(LauncherText text)
+    {
+    }
+
+    protected void ApplyHeader(string title, string subtitle)
+    {
+        if (_pageTitleLabel is not null)
+            _pageTitleLabel.Text = title;
+        if (_pageSubtitleLabel is not null)
+            _pageSubtitleLabel.Text = subtitle;
+    }
 
     public void ApplyCurrentTheme() => Theme.Apply(this);
 }

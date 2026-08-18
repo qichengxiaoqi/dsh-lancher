@@ -12,6 +12,7 @@ public sealed class MainForm : Form
     private readonly LauncherSettingsStore _settingsStore;
     private readonly LauncherUpdateService _launcherUpdateService;
     private LauncherSettings _settings;
+    private LauncherText _text;
     private readonly ThemeManager _theme;
     private readonly TableLayoutPanel _shell = new();
     private readonly Panel _contentHost = new();
@@ -63,10 +64,11 @@ public sealed class MainForm : Form
         _settings = settings;
         _settingsStore = settingsStore;
         _launcherUpdateService = launcherUpdateService;
+        _text = LauncherTextCatalog.Get(settings.Language);
         _theme = new ThemeManager(settings.Theme);
         _navigationCollapsed = false;
 
-        Text = "dsh++ · DeepSeek Harness Control Deck";
+        Text = _text.WindowTitle;
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(1120, 720);
         MinimumSize = new Size(960, 640);
@@ -95,6 +97,8 @@ public sealed class MainForm : Form
         _deepSeekApiPage = _pages.Values.OfType<DeepSeekApiPage>().Single();
         _systemSettingsPage = _pages.Values.OfType<SystemSettingsPage>().Single();
         _pluginSettingsPage = _pages.Values.OfType<PluginSettingsPage>().Single();
+        foreach (var page in _pages.Values)
+            page.ApplyLanguage(_text);
         ConfigureTrayIcon();
         _theme.Apply(this);
         ApplyNavigationMode(UiMetrics.ResolveNavigationMode(
@@ -211,25 +215,25 @@ public sealed class MainForm : Form
         _navigation.WrapContents = false;
         _navigation.AutoScroll = true;
         _navigation.BackColor = _theme.Palette.Surface;
-        AddNavigation("DSH 管理", "01");
-        AddNavigation("安装维护", "02");
-        AddNavigation("DeepSeek API", "03");
-        AddNavigation("系统级设置", "04");
-        AddNavigation("插件设置", "05");
-        AddNavigation("启动器设置", "06");
+        AddNavigation("DSH 管理", _text.DshManagement, "01");
+        AddNavigation("安装维护", _text.Maintenance, "02");
+        AddNavigation("DeepSeek API", _text.DeepSeekApi, "03");
+        AddNavigation("系统级设置", _text.SystemSettings, "04");
+        AddNavigation("插件设置", _text.PluginSettings, "05");
+        AddNavigation("启动器设置", _text.LauncherSettings, "06");
         sidebar.Controls.Add(_navigation, 0, 1);
 
         var footer = new Panel { Dock = DockStyle.Fill, BackColor = _theme.Palette.Surface };
         _footerLabel = new Label
         {
-            Text = "LOCAL CONTROL DECK\n.NET 9 · WIN-X64",
+            Text = _text.FooterText,
             Dock = DockStyle.Fill,
             ForeColor = _theme.Palette.Muted,
             TextAlign = ContentAlignment.BottomLeft,
             Tag = "mono"
         };
         footer.Controls.Add(_footerLabel);
-        _trayStatusChip = new StatusChip("托盘待命", _theme.Palette)
+        _trayStatusChip = new StatusChip(_text.TrayBackground, _theme.Palette)
         {
             Dock = DockStyle.Top,
             Margin = new Padding(0, 0, 0, 6)
@@ -239,17 +243,17 @@ public sealed class MainForm : Form
         return sidebar;
     }
 
-    private void AddNavigation(string title, string index)
+    private void AddNavigation(string pageKey, string title, string index)
     {
         var item = NavigationItem.Create(title, index);
         var button = new NavigationButton(item, _theme.Palette)
         {
             Width = Math.Max(56, UiMetrics.NavigationWidth(_navigationCollapsed, _settings.Theme.NavigationWidth) - 16),
-            Tag = title
+            Tag = pageKey
         };
-        button.Click += (_, _) => SelectPage(title);
+        button.Click += (_, _) => SelectPage(pageKey);
         _navigationToolTip.SetToolTip(button, title);
-        _navigationButtons[title] = button;
+        _navigationButtons[pageKey] = button;
         _navigation.Controls.Add(button);
     }
 
@@ -271,16 +275,17 @@ public sealed class MainForm : Form
         DshPatchQueueService patchQueue)
     {
         _pages["DSH 管理"] = new DshManagementPage(
-            dshPaths, serviceController, statusProbe, gitRepository, patchQueue, _theme);
+            dshPaths, serviceController, statusProbe, gitRepository, patchQueue, _theme, _text);
         _pages["安装维护"] = new MaintenancePage(
             _settings,
             _settingsStore,
             new PathValidator(),
             pathDiscovery,
             SaveSettingsAsync,
-            _theme);
-        _pages["DeepSeek API"] = new DeepSeekApiPage(_settings, credentialStore, apiClient, _theme);
-        _pages["系统级设置"] = new SystemSettingsPage(instructionScanner, _theme);
+            _theme,
+            _text);
+        _pages["DeepSeek API"] = new DeepSeekApiPage(_settings, credentialStore, apiClient, _theme, _text);
+        _pages["系统级设置"] = new SystemSettingsPage(instructionScanner, _theme, _text);
         _pages["插件设置"] = new PluginSettingsPage(
             _settings.Paths,
             pluginInventory,
@@ -290,14 +295,16 @@ public sealed class MainForm : Form
             patchService,
             serviceController,
             statusProbe,
-            _theme);
+            _theme,
+            _text);
         _launcherSettingsPage = new LauncherSettingsPage(
             _settings,
             _settingsStore,
             SaveSettingsAsync,
             launcherUpdateService,
             ExitApplication,
-            _theme);
+            _theme,
+            _text);
         _pages["启动器设置"] = _launcherSettingsPage;
     }
 
@@ -309,19 +316,19 @@ public sealed class MainForm : Form
         var launcherIcon = TrayIconFactory.Create(_theme.Palette, TrayStatusKind.Checking);
         Icon = (Icon)launcherIcon.Clone();
         _notifyIcon.Icon = launcherIcon;
-        _notifyIcon.Text = "dsh++ · DeepSeek Harness";
+        _notifyIcon.Text = _text.WindowTitle;
         _notifyIcon.Visible = true;
         _notifyIcon.ContextMenuStrip = _trayMenu;
         _notifyIcon.DoubleClick += (_, _) => ShowFromTray();
 
-        var open = new ToolStripMenuItem("打开 dsh++");
+        var open = new ToolStripMenuItem(_text.TrayOpen);
         open.Click += (_, _) => ShowFromTray();
-        var refresh = new ToolStripMenuItem("刷新 DSH 状态");
+        var refresh = new ToolStripMenuItem(_text.TrayRefresh);
         refresh.Click += async (_, _) => await RefreshDshStatusFromTrayAsync();
-        var exit = new ToolStripMenuItem("退出 dsh++");
+        var exit = new ToolStripMenuItem(_text.TrayExit);
         exit.Click += (_, _) => ExitApplication();
         _trayMenu.Items.AddRange([open, refresh, new ToolStripSeparator(), exit]);
-        UpdateTrayStatus("正在检测 DSH", TrayStatusKind.Checking);
+        UpdateTrayStatus(_text.TrayChecking, TrayStatusKind.Checking);
     }
 
     private async Task RefreshDshStatusFromTrayAsync()
@@ -330,7 +337,7 @@ public sealed class MainForm : Form
             return;
         try
         {
-            UpdateTrayStatus("正在检测 DSH", TrayStatusKind.Checking);
+            UpdateTrayStatus(_text.TrayChecking, TrayStatusKind.Checking);
             await _dshManagementPage.RefreshAsync(CancellationToken.None);
             UpdateTrayStatus(
                 DescribeState(_dshManagementPage.CurrentServiceState),
@@ -338,7 +345,7 @@ public sealed class MainForm : Form
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            UpdateTrayStatus("DSH 探测异常", TrayStatusKind.Attention);
+            UpdateTrayStatus(_text.TrayUnknown, TrayStatusKind.Attention);
         }
     }
 
@@ -368,20 +375,70 @@ public sealed class MainForm : Form
         var normalized = status.Length > 36 ? status[..36] : status;
         _notifyIcon.Text = $"dsh++ - {normalized}";
         _trayStatusChip?.SetState(
-            _navigationCollapsed ? "●" : $"托盘 · {normalized}",
+            _navigationCollapsed
+                ? "●"
+                : _text.Pick($"托盘 · {normalized}", $"Tray · {normalized}"),
             color,
             Color.FromArgb(35, color));
         if (_trayStatusChip is not null)
-            _navigationToolTip.SetToolTip(_trayStatusChip, $"托盘：{normalized}");
+            _navigationToolTip.SetToolTip(
+                _trayStatusChip,
+                _text.Pick($"托盘：{normalized}", $"Tray: {normalized}"));
     }
 
-    private static string DescribeState(ServiceState state) => state switch
+    private string DescribeState(ServiceState state) => state switch
     {
-        ServiceState.Running => "运行中",
-        ServiceState.Stopped => "已停止",
-        ServiceState.StartFailed => "启动失败",
-        _ => "未知"
+        ServiceState.Running => _text.Pick("运行中", "Running"),
+        ServiceState.Stopped => _text.Pick("已停止", "Stopped"),
+        ServiceState.StartFailed => _text.Pick("启动失败", "Start failed"),
+        _ => _text.Pick("未知", "Unknown")
     };
+
+    private void ApplyLanguage(LauncherLanguage language)
+    {
+        _text = LauncherTextCatalog.Get(language);
+        Text = _text.WindowTitle;
+        if (_brandKicker is not null)
+            _brandKicker.Text = _text.BrandKicker;
+        if (_footerLabel is not null)
+            _footerLabel.Text = _text.FooterText;
+        if (_trayStatusChip is not null)
+            _trayStatusChip.SetState(_text.TrayBackground, _theme.Palette.Muted, _theme.Palette.Surface);
+
+        var titles = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["DSH 管理"] = _text.DshManagement,
+            ["安装维护"] = _text.Maintenance,
+            ["DeepSeek API"] = _text.DeepSeekApi,
+            ["系统级设置"] = _text.SystemSettings,
+            ["插件设置"] = _text.PluginSettings,
+            ["启动器设置"] = _text.LauncherSettings
+        };
+        foreach (var pair in _navigationButtons)
+        {
+            if (!titles.TryGetValue(pair.Key, out var title))
+                continue;
+            pair.Value.UpdateTitle(title);
+            _navigationToolTip.SetToolTip(pair.Value, title);
+        }
+
+        if (_trayMenu.Items.Count >= 4)
+        {
+            if (_trayMenu.Items[0] is ToolStripMenuItem open)
+                open.Text = _text.TrayOpen;
+            if (_trayMenu.Items[1] is ToolStripMenuItem refresh)
+                refresh.Text = _text.TrayRefresh;
+            if (_trayMenu.Items[3] is ToolStripMenuItem exit)
+                exit.Text = _text.TrayExit;
+        }
+        foreach (var page in _pages.Values)
+            page.ApplyLanguage(_text);
+        UpdateTrayStatus(
+            _dshManagementPage is null ? _text.TrayChecking : DescribeState(_dshManagementPage.CurrentServiceState),
+            _dshManagementPage is null
+                ? TrayStatusKind.Checking
+                : TrayStatusMapper.From(_dshManagementPage.CurrentServiceState, busy: false));
+    }
 
     private void HandleFormClosing(object? sender, FormClosingEventArgs e)
     {
@@ -447,11 +504,11 @@ public sealed class MainForm : Form
         if (_footerLabel is not null)
             _footerLabel.Visible = true;
         if (_trayStatusChip is not null)
-            _navigationToolTip.SetToolTip(_trayStatusChip, "托盘状态");
+            _navigationToolTip.SetToolTip(_trayStatusChip, _text.TrayBackground);
         _navigation.PerformLayout();
         _shell.PerformLayout();
         UpdateTrayStatus(
-            _dshManagementPage is null ? "正在检测 DSH" : DescribeState(_dshManagementPage.CurrentServiceState),
+            _dshManagementPage is null ? _text.TrayChecking : DescribeState(_dshManagementPage.CurrentServiceState),
             _dshManagementPage is null
                 ? TrayStatusKind.Checking
                 : TrayStatusMapper.From(_dshManagementPage.CurrentServiceState, busy: false));
@@ -466,7 +523,7 @@ public sealed class MainForm : Form
         ShowInTaskbar = false;
         Hide();
         UpdateTrayStatus(
-            "后台待命",
+            _text.TrayBackground,
             _dshManagementPage is null
                 ? TrayStatusKind.Checking
                 : TrayStatusMapper.From(_dshManagementPage.CurrentServiceState, busy: false));
@@ -482,7 +539,7 @@ public sealed class MainForm : Form
         _refreshTimer.Start();
         _ = RefreshActivePageAsync();
         UpdateTrayStatus(
-            _dshManagementPage is null ? "正在检测 DSH" : DescribeState(_dshManagementPage.CurrentServiceState),
+            _dshManagementPage is null ? _text.TrayChecking : DescribeState(_dshManagementPage.CurrentServiceState),
             _dshManagementPage is null
                 ? TrayStatusKind.Checking
                 : TrayStatusMapper.From(_dshManagementPage.CurrentServiceState, busy: false));
@@ -548,6 +605,7 @@ public sealed class MainForm : Form
         _pluginSettingsPage?.UpdatePaths(settings.Paths);
         _pluginSettingsPage?.UpdateSkillPaths(
             _skillPathResolver.Resolve(settings.Paths, settings.SkillImport));
+        ApplyLanguage(settings.Language);
         _theme.Update(settings.Theme);
         foreach (var page in _pages.Values)
             page.ApplyCurrentTheme();
@@ -601,10 +659,12 @@ public sealed class MainForm : Form
             if (!result.UpdateAvailable || result.Release is null)
                 return;
 
-            var version = result.LatestVersion?.ToString() ?? "新版本";
-            UpdateTrayStatus($"有新版本 {version}", TrayStatusKind.Attention);
-            _notifyIcon.BalloonTipTitle = "dsh++ 有新版本";
-            _notifyIcon.BalloonTipText = $"发现 dsh++ {version}，可在“启动器设置”中下载并重启。";
+            var version = result.LatestVersion?.ToString() ?? _text.Pick("新版本", "new version");
+            UpdateTrayStatus(_text.Pick($"有新版本 {version}", $"New version {version} available"), TrayStatusKind.Attention);
+            _notifyIcon.BalloonTipTitle = _text.Pick("dsh++ 有新版本", "dsh++ update available");
+            _notifyIcon.BalloonTipText = _text.Pick(
+                $"发现 dsh++ {version}，可在“启动器设置”中下载并重启。",
+                $"dsh++ {version} is available. Download and restart it from Launcher Settings.");
             _notifyIcon.ShowBalloonTip(5000);
         }
         catch (OperationCanceledException)

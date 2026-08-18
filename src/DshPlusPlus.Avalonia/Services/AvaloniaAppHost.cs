@@ -15,8 +15,11 @@ public sealed class AvaloniaAppHost : IDisposable
         Settings = SettingsStore.Load();
         Paths = Settings.Paths.ToDshPaths();
         Runner = new ProcessRunner();
-        ServiceController = new DshServiceController(Runner, Paths);
         StatusProbe = new ServiceStatusProbe(Paths, _httpClient);
+        ServiceController = new DshServiceController(
+            Runner,
+            Paths,
+            cancellationToken => StatusProbe.ProbeDshAsync(cancellationToken, forceRefresh: true));
         GitRepository = new GitRepositoryService(Paths, Runner, Settings.DshUpdates);
         CredentialStore = new DshCredentialStore();
         ApiClient = new DeepSeekApiClient();

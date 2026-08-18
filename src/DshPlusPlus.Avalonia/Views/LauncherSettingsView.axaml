@@ -13,17 +13,19 @@
         </Grid>
       </Border>
       <Border Classes="card">
-        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="20" RowSpacing="12">
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="20" RowSpacing="12">
           <TextBlock Text="Theme" Classes="muted" VerticalAlignment="Center" />
           <TextBox Grid.Column="1" Text="{Binding ThemeName, Mode=TwoWay}" PlaceholderText="Obsidian" />
-          <TextBlock Grid.Row="1" Text="Font scale" Classes="muted" VerticalAlignment="Center" />
-          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding FontScale, Mode=TwoWay}" PlaceholderText="80–140" />
-          <TextBlock Grid.Row="2" Text="Refresh seconds" Classes="muted" VerticalAlignment="Center" />
-          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding RefreshSeconds, Mode=TwoWay}" PlaceholderText="5–120" />
-          <TextBlock Grid.Row="3" Text="Update interval hours" Classes="muted" VerticalAlignment="Center" />
-          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding UpdateIntervalHours, Mode=TwoWay}" PlaceholderText="6–168" />
-          <CheckBox Grid.Row="4" Grid.ColumnSpan="2" Content="Start with compact icon navigation" IsChecked="{Binding NavigationCollapsed, Mode=TwoWay}" />
-          <CheckBox Grid.Row="5" Grid.ColumnSpan="2" Content="Auto-collapse navigation on narrow windows" IsChecked="{Binding AutoCollapse, Mode=TwoWay}" />
+          <TextBlock Grid.Row="1" Text="{Binding Text.LanguageLabel}" Classes="muted" VerticalAlignment="Center" />
+          <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding LanguageOptions}" SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}" />
+          <TextBlock Grid.Row="2" Text="Font scale" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding FontScale, Mode=TwoWay}" PlaceholderText="80–140" />
+          <TextBlock Grid.Row="3" Text="Refresh seconds" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding RefreshSeconds, Mode=TwoWay}" PlaceholderText="5–120" />
+          <TextBlock Grid.Row="4" Text="Update interval hours" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding UpdateIntervalHours, Mode=TwoWay}" PlaceholderText="6–168" />
+          <CheckBox Grid.Row="5" Grid.ColumnSpan="2" Content="Start with compact icon navigation" IsChecked="{Binding NavigationCollapsed, Mode=TwoWay}" />
+          <CheckBox Grid.Row="6" Grid.ColumnSpan="2" Content="Auto-collapse navigation on narrow windows" IsChecked="{Binding AutoCollapse, Mode=TwoWay}" />
         </Grid>
       </Border>
       <Border Classes="card">

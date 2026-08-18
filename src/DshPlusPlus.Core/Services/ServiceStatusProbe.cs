@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
 using DshPlusPlus.Core.Models;
 
 namespace DshPlusPlus.Core.Services;
@@ -31,11 +33,13 @@ public sealed class ServiceStatusProbe
 
     private readonly DshPaths _paths;
     private readonly HttpClient _httpClient;
+    private readonly ServiceProbeCoordinator _dshProbeCoordinator;
 
     public ServiceStatusProbe(DshPaths paths, HttpClient? httpClient = null)
     {
         _paths = paths;
         _httpClient = httpClient ?? new HttpClient();
+        _dshProbeCoordinator = new ServiceProbeCoordinator(ProbeDshCoreAsync);
     }
 
     public async Task<ServiceProbeResult> ProbeAsync(CancellationToken cancellationToken)
@@ -83,6 +87,71 @@ public sealed class ServiceStatusProbe
         catch (Exception ex)
         {
             return ServiceStatusMapper.HttpFailure(ex.Message);
+        }
+    }
+
+    public Task<ServiceProbeResult> ProbeDshAsync(
+        CancellationToken cancellationToken,
+        bool forceRefresh = false) =>
+        _dshProbeCoordinator.ProbeAsync(cancellationToken, forceRefresh);
+
+    private async Task<ServiceProbeResult> ProbeDshCoreAsync(CancellationToken cancellationToken)
+    {
+        var basic = await ProbeAsync(cancellationToken);
+        if (basic.State != ServiceState.Running)
+            return basic;
+
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                _paths.WebUrl.TrimEnd('/') + "/api/host.describe")
+            {
+                Content = new StringContent(
+                    "{\"type\":\"client-request\",\"rpcId\":\"dsh-plus-plus-health\",\"method\":\"host.describe\",\"payload\":{}}",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+            using var response = await _httpClient.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken)
+                .WaitAsync(HttpTimeout, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode || !IsSuccessfulHostDescribe(body))
+                return ServiceStatusMapper.HttpFailure("DSH API health check returned an invalid response");
+
+            return new ServiceProbeResult(ServiceState.Running, "DSH API health check passed");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return ServiceStatusMapper.HttpFailure("DSH API health check timed out");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return ServiceStatusMapper.HttpFailure(ex.Message);
+        }
+    }
+
+    private static bool IsSuccessfulHostDescribe(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            return root.TryGetProperty("type", out var type)
+                   && type.GetString() == "server-response"
+                   && root.TryGetProperty("result", out var result)
+                   && result.TryGetProperty("ok", out var ok)
+                   && ok.ValueKind == JsonValueKind.True;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 }
