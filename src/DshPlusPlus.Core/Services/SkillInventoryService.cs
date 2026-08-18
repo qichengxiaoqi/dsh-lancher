@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using DshPlusPlus.Core.Models;
@@ -61,7 +60,7 @@ public sealed class SkillInventoryService
         try
         {
             normalizedRoot = Path.GetFullPath(root);
-            if (IsReparsePoint(normalizedRoot))
+            if (SkillContentHasher.IsReparsePoint(normalizedRoot))
                 return;
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
@@ -90,9 +89,9 @@ public sealed class SkillInventoryService
 
             try
             {
-                if (!IsWithin(entry, normalizedRoot) || IsReparsePoint(entry))
+                if (!SkillContentHasher.IsWithin(entry, normalizedRoot) || SkillContentHasher.IsReparsePoint(entry))
                 {
-                    if (IsReparsePoint(entry))
+                    if (SkillContentHasher.IsReparsePoint(entry))
                         result.Add(Unsupported(entry, targetRoot, sourceKind, "不导入目录链接或文件链接"));
                     continue;
                 }
@@ -174,7 +173,7 @@ public sealed class SkillInventoryService
         var targetPath = Path.Combine(
             targetRoot,
             isDirectoryBundle ? parsed.Name : parsed.Name + ".md");
-        if (!IsWithin(targetPath, targetRoot))
+        if (!SkillContentHasher.IsWithin(targetPath, targetRoot))
         {
             return new SkillInfo(
                 parsed.Name,
@@ -189,7 +188,7 @@ public sealed class SkillInventoryService
                 "目标路径超出 DSH 技能目录");
         }
 
-        var sourceHash = ComputeHash(sourcePath, isDirectoryBundle, cancellationToken);
+        var sourceHash = SkillContentHasher.Compute(sourcePath, isDirectoryBundle, cancellationToken);
         string? targetHash = null;
         var state = SkillImportState.New;
         string? warning = null;
@@ -198,14 +197,14 @@ public sealed class SkillInventoryService
             var targetMatchesType = isDirectoryBundle
                 ? Directory.Exists(targetPath)
                 : File.Exists(targetPath);
-            if (!targetMatchesType || IsReparsePoint(targetPath))
+            if (!targetMatchesType || SkillContentHasher.IsReparsePoint(targetPath))
             {
                 state = SkillImportState.Conflict;
                 warning = "目标已存在但类型不一致或是链接";
             }
             else
             {
-                targetHash = ComputeHash(targetPath, isDirectoryBundle, cancellationToken);
+                targetHash = SkillContentHasher.Compute(targetPath, isDirectoryBundle, cancellationToken);
                 state = string.Equals(sourceHash, targetHash, StringComparison.Ordinal)
                     ? SkillImportState.SameContent
                     : SkillImportState.Conflict;
@@ -282,85 +281,6 @@ public sealed class SkillInventoryService
         var pair = values.FirstOrDefault(item =>
             string.Equals(item.Key, key, StringComparison.OrdinalIgnoreCase));
         return pair.Value?.ToString()?.Trim();
-    }
-
-    private static string ComputeHash(
-        string path,
-        bool isDirectoryBundle,
-        CancellationToken cancellationToken)
-    {
-        var root = isDirectoryBundle
-            ? Path.GetFullPath(path)
-            : Path.GetDirectoryName(Path.GetFullPath(path))!;
-        var files = isDirectoryBundle
-            ? EnumerateRegularFiles(root, cancellationToken)
-            : [Path.GetFullPath(path)];
-
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        foreach (var file in files.OrderBy(item => item, StringComparer.OrdinalIgnoreCase))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var relative = isDirectoryBundle
-                ? Path.GetRelativePath(root, file).Replace(Path.DirectorySeparatorChar, '/')
-                : Path.GetFileName(file);
-            hash.AppendData(Encoding.UTF8.GetBytes(relative));
-            hash.AppendData([0]);
-            var info = new FileInfo(file);
-            hash.AppendData(BitConverter.GetBytes(info.Length));
-            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read,
-                bufferSize: 64 * 1024, options: FileOptions.SequentialScan);
-            var buffer = new byte[64 * 1024];
-            int read;
-            while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                hash.AppendData(buffer, 0, read);
-            }
-        }
-        return Convert.ToHexString(hash.GetHashAndReset());
-    }
-
-    private static IReadOnlyList<string> EnumerateRegularFiles(
-        string root,
-        CancellationToken cancellationToken)
-    {
-        var files = new List<string>();
-        var pending = new Stack<string>();
-        pending.Push(root);
-        while (pending.Count > 0)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var directory = pending.Pop();
-            if (IsReparsePoint(directory))
-                throw new InvalidDataException("技能包包含目录链接");
-            foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (IsReparsePoint(entry))
-                    throw new InvalidDataException("技能包包含链接文件");
-                if (Directory.Exists(entry))
-                    pending.Push(entry);
-                else if (File.Exists(entry))
-                    files.Add(Path.GetFullPath(entry));
-            }
-        }
-        return files;
-    }
-
-    private static bool IsReparsePoint(string path) =>
-        (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
-
-    private static bool IsWithin(string path, string parent)
-    {
-        var normalizedPath = Path.GetFullPath(path)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var normalizedParent = Path.GetFullPath(parent)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            + Path.DirectorySeparatorChar;
-        return normalizedPath.StartsWith(normalizedParent, StringComparison.OrdinalIgnoreCase)
-               || string.Equals(normalizedPath,
-                   normalizedParent.TrimEnd(Path.DirectorySeparatorChar),
-                   StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed record ParsedFrontmatter(

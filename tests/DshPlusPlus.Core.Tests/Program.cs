@@ -310,6 +310,156 @@ static class Program
             }
         });
 
+        Run("skill importer selectability respects state", () =>
+        {
+            var baseInfo = new SkillInfo(
+                "demo-skill", "Demo", SkillSourceKind.Codex,
+                "source", "target", true, "source-hash", null,
+                SkillImportState.New, null);
+            Assert.True(SkillImportService.IsSelectable(baseInfo));
+            Assert.True(SkillImportService.IsSelectable(baseInfo with { State = SkillImportState.Conflict }));
+            Assert.False(SkillImportService.IsSelectable(baseInfo with { State = SkillImportState.SameContent }));
+            Assert.False(SkillImportService.IsSelectable(baseInfo with { State = SkillImportState.Invalid }));
+        });
+
+        await RunAsync("skill importer copies bundles and backs up conflicts", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-skill-import-{Guid.NewGuid():N}");
+            var sourceRoot = Path.Combine(root, "codex", "skills");
+            var targetRoot = Path.Combine(root, "dsh", "skills");
+            var source = Path.Combine(sourceRoot, "demo-skill");
+            var target = Path.Combine(targetRoot, "demo-skill");
+            var backupRoot = Path.Combine(root, "backups");
+            Directory.CreateDirectory(source);
+            Directory.CreateDirectory(targetRoot);
+            Directory.CreateDirectory(Path.Combine(source, "references"));
+            Directory.CreateDirectory(Path.Combine(source, "scripts"));
+            Directory.CreateDirectory(Path.Combine(source, "assets"));
+            try
+            {
+                await File.WriteAllTextAsync(Path.Combine(source, "SKILL.md"), "old body");
+                await File.WriteAllTextAsync(Path.Combine(source, "references", "readme.md"), "reference");
+                await File.WriteAllTextAsync(Path.Combine(source, "scripts", "check.ps1"), "Write-Output check");
+                await File.WriteAllTextAsync(Path.Combine(source, "assets", "icon.txt"), "asset");
+
+                var paths = new SkillPathSet(sourceRoot, sourceRoot, targetRoot);
+                var importer = new SkillImportService(paths, backupRoot);
+                var skill = new SkillInfo(
+                    "demo-skill", "Demo", SkillSourceKind.Codex,
+                    source, target, true, string.Empty, null,
+                    SkillImportState.New, null);
+
+                var first = await importer.ImportAsync(skill, CancellationToken.None);
+                Assert.True(first.Succeeded);
+                Assert.True(first.RequiresRefresh);
+                Assert.Equal("old body", await File.ReadAllTextAsync(Path.Combine(target, "SKILL.md")));
+                Assert.Equal("reference", await File.ReadAllTextAsync(Path.Combine(target, "references", "readme.md")));
+                Assert.Equal("Write-Output check", await File.ReadAllTextAsync(Path.Combine(target, "scripts", "check.ps1")));
+                Assert.Equal("asset", await File.ReadAllTextAsync(Path.Combine(target, "assets", "icon.txt")));
+
+                var same = await importer.ImportAsync(
+                    skill with { State = SkillImportState.SameContent }, CancellationToken.None);
+                Assert.True(same.Succeeded);
+                Assert.False(same.RequiresRefresh);
+                Assert.Equal<string?>(null, same.BackupPath);
+
+                await File.WriteAllTextAsync(Path.Combine(source, "SKILL.md"), "new body");
+                var conflict = await importer.ImportAsync(
+                    skill with { State = SkillImportState.Conflict }, CancellationToken.None);
+                Assert.True(conflict.Succeeded);
+                Assert.True(conflict.BackupPath is not null && Directory.Exists(conflict.BackupPath));
+                Assert.Equal("new body", await File.ReadAllTextAsync(Path.Combine(target, "SKILL.md")));
+                Assert.Equal("old body", await File.ReadAllTextAsync(Path.Combine(conflict.BackupPath!, "SKILL.md")));
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
+        await RunAsync("skill importer rejects paths outside configured roots", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-skill-import-safe-{Guid.NewGuid():N}");
+            var sourceRoot = Path.Combine(root, "codex", "skills");
+            var targetRoot = Path.Combine(root, "dsh", "skills");
+            var outsideSource = Path.Combine(root, "outside-source", "demo-skill");
+            var outsideTarget = Path.Combine(root, "outside-target", "demo-skill");
+            Directory.CreateDirectory(sourceRoot);
+            Directory.CreateDirectory(targetRoot);
+            Directory.CreateDirectory(outsideSource);
+            try
+            {
+                var sourceFile = Path.Combine(outsideSource, "SKILL.md");
+                await File.WriteAllTextAsync(sourceFile, "source");
+                var importer = new SkillImportService(
+                    new SkillPathSet(sourceRoot, sourceRoot, targetRoot),
+                    Path.Combine(root, "backups"));
+                var outsideSourceResult = await importer.ImportAsync(
+                    new SkillInfo("demo-skill", "Demo", SkillSourceKind.Codex,
+                        outsideSource, Path.Combine(targetRoot, "demo-skill"), true,
+                        string.Empty, null, SkillImportState.New, null),
+                    CancellationToken.None);
+                Assert.False(outsideSourceResult.Succeeded);
+                Assert.False(Directory.Exists(Path.Combine(targetRoot, "demo-skill")));
+
+                var validSource = Path.Combine(sourceRoot, "demo-skill");
+                Directory.CreateDirectory(validSource);
+                await File.WriteAllTextAsync(Path.Combine(validSource, "SKILL.md"), "valid");
+                var outsideTargetResult = await importer.ImportAsync(
+                    new SkillInfo("demo-skill", "Demo", SkillSourceKind.Codex,
+                        validSource, outsideTarget, true,
+                        string.Empty, null, SkillImportState.New, null),
+                    CancellationToken.None);
+                Assert.False(outsideTargetResult.Succeeded);
+                Assert.False(Directory.Exists(outsideTarget));
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
+        await RunAsync("skill importer honors cancellation without leaving a stage", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-skill-import-cancel-{Guid.NewGuid():N}");
+            var sourceRoot = Path.Combine(root, "codex", "skills");
+            var targetRoot = Path.Combine(root, "dsh", "skills");
+            var source = Path.Combine(sourceRoot, "demo-skill");
+            var target = Path.Combine(targetRoot, "demo-skill");
+            Directory.CreateDirectory(source);
+            Directory.CreateDirectory(targetRoot);
+            try
+            {
+                await File.WriteAllTextAsync(Path.Combine(source, "SKILL.md"), "source");
+                var importer = new SkillImportService(
+                    new SkillPathSet(sourceRoot, sourceRoot, targetRoot),
+                    Path.Combine(root, "backups"));
+                using var cancellation = new CancellationTokenSource();
+                cancellation.Cancel();
+                var canceled = false;
+                try
+                {
+                    await importer.ImportAsync(
+                        new SkillInfo("demo-skill", "Demo", SkillSourceKind.Codex,
+                            source, target, true, string.Empty, null,
+                            SkillImportState.New, null),
+                        cancellation.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    canceled = true;
+                }
+
+                Assert.True(canceled);
+                Assert.False(Directory.Exists(target));
+                Assert.False(Directory.EnumerateDirectories(targetRoot, ".dsh++-stage-*", SearchOption.TopDirectoryOnly).Any());
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
         await RunAsync("launcher update parses release and verifies asset", async () =>
         {
             var root = Path.Combine(Path.GetTempPath(), $"dsh-launcher-update-{Guid.NewGuid():N}");
