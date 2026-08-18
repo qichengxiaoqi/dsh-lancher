@@ -23,6 +23,9 @@ public sealed class ThemeManager : IDisposable
 
     public void Update(ThemeSettings settings)
     {
+        if (Settings == settings)
+            return;
+
         _retiredFonts.Add(_fonts);
         Settings = settings;
         Palette = ThemePalettes.Create(settings);

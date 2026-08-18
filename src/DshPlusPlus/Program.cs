@@ -21,14 +21,8 @@ internal static class Program
         var runner = new ProcessRunner();
         var serviceController = new DshServiceController(runner, paths);
         var statusProbe = new ServiceStatusProbe(paths);
-        var gitRepository = new GitRepositoryService(paths, runner);
-        var projectCommands = new ProjectCommandService(paths, runner);
-        var serviceScriptBackup = new DshServiceScriptBackup(paths.ServiceScript);
-        var updateCoordinator = new UpdateCoordinator(
-            gitRepository,
-            projectCommands,
-            serviceController,
-            serviceScriptBackup);
+        var gitRepository = new GitRepositoryService(paths, runner, settings.DshUpdates);
+        var patchQueue = new DshPatchQueueService(paths, runner, settings.DshUpdates);
         var credentialStore = new DshCredentialStore();
         var apiClient = new DeepSeekApiClient();
         var runtimeInventory = new RuntimePluginInventoryClient();
@@ -48,14 +42,14 @@ internal static class Program
                 serviceController,
                 statusProbe,
                 gitRepository,
-                updateCoordinator,
                 credentialStore,
                 apiClient,
                 instructionScanner,
                 pluginInventory,
                 patchService,
                 pathDiscovery,
-                launcherUpdateService));
+                launcherUpdateService,
+                patchQueue));
         }
     }
 }

@@ -14,9 +14,12 @@ public sealed record ThemeSettings
 
 public sealed record LauncherSettings
 {
-    public int SchemaVersion { get; init; } = 3;
+    public const int CurrentSchemaVersion = 4;
+
+    public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public bool AutoDetectPaths { get; init; } = true;
     public LauncherPaths Paths { get; init; } = LauncherPaths.CreateDefault();
+    public DshUpdateSettings DshUpdates { get; init; } = new();
     public ThemeSettings Theme { get; init; } = new();
     public string StartPage { get; init; } = "DSH 管理";
     public int RefreshSeconds { get; init; } = 10;

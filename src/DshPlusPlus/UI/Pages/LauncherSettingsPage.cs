@@ -23,6 +23,8 @@ public sealed class LauncherSettingsPage : PageBase
     private readonly CheckBox _showLogs = new();
     private readonly CheckBox _autoUpdate = new();
     private readonly NumericUpDown _updateIntervalHours = new();
+    private readonly TextBox _upstreamRemote = new();
+    private readonly TextBox _patchBranch = new();
     private readonly Label _updateStatus;
     private readonly GlowButton _checkUpdateButton;
     private readonly GlowButton _downloadUpdateButton;
@@ -85,6 +87,9 @@ public sealed class LauncherSettingsPage : PageBase
         AddRow(table, "显示日志抽屉", _showLogs);
         AddRow(table, "自动检查更新", _autoUpdate);
         AddRow(table, "检查间隔（小时）", _updateIntervalHours);
+        AddRow(table, "DSH 官方远程", _upstreamRemote);
+        AddRow(table, "本地补丁分支", _patchBranch);
+        AddRow(table, "DSH 更新隔离", MutedLabel("源码补丁与插件/配置分离；dsh++ Release 更新独立执行"));
         var updateActions = new FlowLayoutPanel
         {
             AutoSize = true,
@@ -160,6 +165,8 @@ public sealed class LauncherSettingsPage : PageBase
         _updateIntervalHours.Minimum = 6;
         _updateIntervalHours.Maximum = 168;
         _updateIntervalHours.Value = Math.Clamp(_settings.UpdateCheckIntervalHours, 6, 168);
+        _upstreamRemote.Text = _settings.DshUpdates.UpstreamRemoteName;
+        _patchBranch.Text = _settings.DshUpdates.PatchBranchName;
     }
 
     private async void SaveAsync(object? sender, EventArgs e)
@@ -181,8 +188,21 @@ public sealed class LauncherSettingsPage : PageBase
             RefreshSeconds = (int)_refreshSeconds.Value,
             ShowLogDrawer = _showLogs.Checked,
             AutoUpdateEnabled = _autoUpdate.Checked,
-            UpdateCheckIntervalHours = (int)_updateIntervalHours.Value
+            UpdateCheckIntervalHours = (int)_updateIntervalHours.Value,
+            DshUpdates = _settings.DshUpdates with
+            {
+                UpstreamRemoteName = _upstreamRemote.Text.Trim(),
+                PatchBranchName = _patchBranch.Text.Trim()
+            }
         };
+        if (!DshPatchQueueService.IsValidBranchName(next.DshUpdates.PatchBranchName)
+            || string.IsNullOrWhiteSpace(next.DshUpdates.UpstreamRemoteName)
+            || next.DshUpdates.UpstreamRemoteName.Any(char.IsWhiteSpace))
+        {
+            _status.Text = "DSH 远程名或补丁分支名称无效";
+            _status.ForeColor = Theme.Palette.Danger;
+            return;
+        }
         try
         {
             await _store.SaveAsync(next, CancellationToken.None);
