@@ -217,6 +217,99 @@ static class Program
             Assert.Equal(SkillImportState.New, info.State);
         });
 
+        await RunAsync("skill path resolver prefers saved and environment paths", async () =>
+        {
+            await Task.Yield();
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-skill-paths-{Guid.NewGuid():N}");
+            var envCodex = Path.Combine(root, "env-codex");
+            var envClaude = Path.Combine(root, "env-claude");
+            var dshHome = Path.Combine(root, "dsh-home");
+            Directory.CreateDirectory(root);
+            var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["CODEX_HOME"] = envCodex,
+                ["CLAUDE_CONFIG_DIR"] = envClaude
+            };
+            try
+            {
+                var resolver = new SkillPathResolver(key => values.TryGetValue(key, out var value) ? value : null);
+                var paths = LauncherPaths.CreateDefault() with { DshHome = dshHome };
+                var resolved = resolver.Resolve(paths, new SkillImportSettings());
+                Assert.Equal(Path.Combine(envCodex, "skills"), resolved.Codex);
+                Assert.Equal(Path.Combine(envClaude, "skills"), resolved.ClaudeCode);
+                Assert.Equal(Path.Combine(dshHome, "skills"), resolved.DshTarget);
+
+                var saved = new SkillImportSettings
+                {
+                    CodexSkillsDirectory = Path.Combine(root, "saved-codex"),
+                    ClaudeSkillsDirectory = Path.Combine(root, "saved-claude"),
+                    DshSkillsDirectory = Path.Combine(root, "saved-dsh")
+                };
+                resolved = resolver.Resolve(paths, saved);
+                Assert.Equal(saved.CodexSkillsDirectory, resolved.Codex);
+                Assert.Equal(saved.ClaudeSkillsDirectory, resolved.ClaudeCode);
+                Assert.Equal(saved.DshSkillsDirectory, resolved.DshTarget);
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
+        await RunAsync("skill inventory detects direct bundles and flat files", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-skill-inventory-{Guid.NewGuid():N}");
+            var codex = Path.Combine(root, "codex", "skills");
+            var claude = Path.Combine(root, "claude", "skills");
+            var target = Path.Combine(root, "dsh", "skills");
+            Directory.CreateDirectory(codex);
+            Directory.CreateDirectory(claude);
+            Directory.CreateDirectory(target);
+            try
+            {
+                await File.WriteAllTextAsync(
+                    Path.Combine(codex, "alpha.md"),
+                    "---\nname: alpha\ndescription: Alpha\n---\n\nBody");
+                Directory.CreateDirectory(Path.Combine(claude, "beta"));
+                await File.WriteAllTextAsync(
+                    Path.Combine(claude, "beta", "SKILL.md"),
+                    "---\nname: beta\ndescription: Beta\n---\n\nBody");
+                Directory.CreateDirectory(Path.Combine(codex, "nested", "deep"));
+                await File.WriteAllTextAsync(
+                    Path.Combine(codex, "nested", "deep", "SKILL.md"),
+                    "---\nname: deep\ndescription: Deep\n---\n\nBody");
+                Directory.CreateDirectory(Path.Combine(codex, "broken"));
+                await File.WriteAllTextAsync(Path.Combine(codex, "broken", "SKILL.md"), "not frontmatter");
+                Directory.CreateDirectory(Path.Combine(codex, ".system", "hidden"));
+                await File.WriteAllTextAsync(
+                    Path.Combine(codex, ".system", "hidden", "SKILL.md"),
+                    "---\nname: hidden\ndescription: Hidden\n---\n\nBody");
+
+                var items = await new SkillInventoryService(new SkillImportSettings
+                {
+                    CodexSkillsDirectory = codex,
+                    ClaudeSkillsDirectory = claude,
+                    DshSkillsDirectory = target
+                }).ScanAsync(CancellationToken.None);
+
+                var alpha = items.Single(item => item.Name == "alpha");
+                var beta = items.Single(item => item.Name == "beta");
+                Assert.Equal(SkillSourceKind.Codex, alpha.SourceKind);
+                Assert.Equal(SkillSourceKind.ClaudeCode, beta.SourceKind);
+                Assert.False(alpha.IsDirectoryBundle);
+                Assert.True(beta.IsDirectoryBundle);
+                Assert.Equal(SkillImportState.New, alpha.State);
+                Assert.Equal(SkillImportState.New, beta.State);
+                Assert.True(alpha.SourceSha256.Length == 64);
+                Assert.True(items.Any(item => item.State == SkillImportState.Invalid));
+                Assert.False(items.Any(item => item.Name == "deep" || item.Name == "hidden"));
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
         await RunAsync("launcher update parses release and verifies asset", async () =>
         {
             var root = Path.Combine(Path.GetTempPath(), $"dsh-launcher-update-{Guid.NewGuid():N}");
