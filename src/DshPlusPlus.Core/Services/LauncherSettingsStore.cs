@@ -58,10 +58,11 @@ public sealed class LauncherSettingsStore
                 SchemaVersion = Math.Max(LauncherSettings.CurrentSchemaVersion, settings.SchemaVersion)
             };
 
+        var detectedPaths = _pathDiscovery.Discover();
         return settings with
         {
             SchemaVersion = Math.Max(LauncherSettings.CurrentSchemaVersion, settings.SchemaVersion),
-            Paths = _pathDiscovery.Discover()
+            Paths = PreserveValidSavedTools(settings.Paths, detectedPaths)
         };
     }
 
@@ -85,6 +86,28 @@ public sealed class LauncherSettingsStore
                 : LauncherLanguage.System
         };
     }
+
+    private static LauncherPaths PreserveValidSavedTools(
+        LauncherPaths saved,
+        LauncherPaths detected) =>
+        detected with
+        {
+            GitExecutable = PreferResolvedTool(detected.GitExecutable, saved.GitExecutable),
+            PowerShellPath = PreferResolvedTool(detected.PowerShellPath, saved.PowerShellPath),
+            PnpmExecutable = PreferResolvedTool(detected.PnpmExecutable, saved.PnpmExecutable)
+        };
+
+    private static string PreferResolvedTool(string detected, string saved) =>
+        IsResolvedTool(detected)
+            ? detected
+            : IsResolvedTool(saved)
+                ? saved
+                : detected;
+
+    private static bool IsResolvedTool(string path) =>
+        !string.IsNullOrWhiteSpace(path)
+        && Path.IsPathFullyQualified(path)
+        && File.Exists(path);
 
     public async Task SaveAsync(LauncherSettings settings, CancellationToken cancellationToken)
     {

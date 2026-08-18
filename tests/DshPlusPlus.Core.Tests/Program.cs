@@ -872,6 +872,43 @@ static class Program
             }
         });
 
+        await RunAsync("settings discovery preserves a valid saved git path when PATH is unavailable", async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), $"dsh-settings-git-fallback-{Guid.NewGuid():N}");
+            var appBase = Path.Combine(root, "dsh++", "publish");
+            var userProfile = Path.Combine(root, "user");
+            var savedGit = Path.Combine(root, "installed", "git.exe");
+            Directory.CreateDirectory(appBase);
+            Directory.CreateDirectory(userProfile);
+            Directory.CreateDirectory(Path.GetDirectoryName(savedGit)!);
+            File.WriteAllText(savedGit, string.Empty);
+            var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            var discovery = new LauncherPathDiscovery(
+                appBase,
+                userProfile,
+                name => environment.TryGetValue(name, out var value) ? value : null);
+            var settingsFile = Path.Combine(root, "settings.json");
+            var store = new LauncherSettingsStore(settingsFile, discovery);
+
+            try
+            {
+                await store.SaveAsync(
+                    LauncherSettings.CreateDefault() with
+                    {
+                        AutoDetectPaths = true,
+                        Paths = LauncherPaths.CreateDefault() with { GitExecutable = savedGit }
+                    },
+                    CancellationToken.None);
+
+                var loaded = store.Load();
+                Assert.Equal(Path.GetFullPath(savedGit), loaded.Paths.GitExecutable);
+            }
+            finally
+            {
+                DeleteTree(root);
+            }
+        });
+
         Run("path validator reports missing required paths", () =>
         {
             var root = Path.Combine(Path.GetTempPath(), $"dsh-paths-{Guid.NewGuid():N}");
